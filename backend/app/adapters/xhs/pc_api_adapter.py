@@ -55,7 +55,9 @@ class XhsPcApiAdapter:
             from apis.xhs_pc_apis import XHS_Apis
 
             api = XHS_Apis()
-            return api.get_user_all_notes(user_url=user_url, cookies_str=self.cookies)
+            success, message, payload = api.get_user_all_notes(user_url=user_url, cookies_str=self.cookies)
+            # Ensure consistent return format
+            return success, message, payload
 
     def get_self_info(self) -> Any:
         with direct_xhs_request_env():

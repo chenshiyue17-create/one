@@ -45,6 +45,48 @@ def start_frontend(port: int) -> Optional[subprocess.Popen]:
     return subprocess.Popen(command, cwd=str(frontend_dir))
 
 
+def kill_process_on_port(port: int) -> None:
+    """Find and kill any process listening on the given port."""
+    try:
+        if sys.platform == "win32":
+            # Windows implementation
+            output = subprocess.check_output(["netstat", "-ano", "-p", "tcp"], encoding="utf-8")
+            for line in output.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.split()
+                    pid = parts[-1]
+                    print(f"Cleaning up existing process on port {port} (PID: {pid})...")
+                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+        else:
+            # macOS/Linux implementation using lsof
+            try:
+                output = subprocess.check_output(["lsof", "-t", f"-i:{port}"], encoding="utf-8")
+                pids = output.strip().split("\n")
+                for pid in pids:
+                    if pid:
+                        print(f"Cleaning up existing process on port {port} (PID: {pid})...")
+                        subprocess.run(["kill", "-9", pid], capture_output=True)
+            except subprocess.CalledProcessError:
+                # lsof returns non-zero if no process is found
+                pass
+    except Exception as e:
+        print(f"Error while cleaning up port {port}: {e}")
+
+
+def open_browser(url: str, delay: float = 1.5) -> None:
+    """Wait for a short delay and then open the given URL in the default browser."""
+    import time
+    import webbrowser
+
+    def _open():
+        time.sleep(delay)
+        print(f"Automatically opening {url}...")
+        webbrowser.open(url)
+
+    import threading
+    threading.Thread(target=_open, daemon=True).start()
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
 
@@ -62,7 +104,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except Exception:
         pass
 
+    # Kill existing processes on target ports to avoid "Port already in use"
+    kill_process_on_port(port)
+    if args.with_frontend:
+        kill_process_on_port(args.frontend_port)
+
     frontend_process = start_frontend(args.frontend_port) if args.with_frontend else None
+
+    # Auto-open browser if frontend is being started
+    if args.with_frontend:
+        # We target the frontend port
+        open_browser(f"http://127.0.0.1:{args.frontend_port}")
 
     print(f"Starting backend at http://{host}:{port}")
     try:

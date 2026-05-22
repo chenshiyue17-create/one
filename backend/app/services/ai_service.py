@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from typing import Any, Protocol
 
 import requests
@@ -387,3 +388,126 @@ class OpenAICompatibleImageClient:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("AI image description is empty")
         return content.strip()
+
+
+class GeminiCliTextClient:
+    def _complete(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> str:
+        prompt = f"{system_prompt}\n\n{user_prompt}"
+        try:
+            # Use gemini --prompt to get response
+            result = subprocess.run(
+                ["gemini", "--prompt", prompt],
+                capture_output=True,
+                text=True,
+                check=True,
+                encoding="utf-8",
+            )
+            content = result.stdout.strip()
+            if not content:
+                # Try reading from stderr if stdout is empty, some versions might log there or it might be a failure
+                if result.stderr.strip():
+                    raise ValueError(f"Gemini CLI error: {result.stderr.strip()}")
+                raise ValueError("Gemini CLI returned empty response")
+            
+            # Remove any ANSI escape sequences if they exist
+            import re
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            content = ansi_escape.sub('', content)
+            
+            return content
+        except subprocess.CalledProcessError as e:
+            raise ValueError(f"Gemini CLI failed: {e.stderr or e}") from e
+        except Exception as e:
+            raise ValueError(f"Error calling Gemini CLI: {e}") from e
+
+    def rewrite_note(
+        self,
+        *,
+        model_config: ModelConfig,
+        api_key: str,
+        title: str,
+        body: str,
+        instruction: str,
+    ) -> str:
+        return self._complete(
+            system_prompt="你是小红书内容运营编辑，负责在保留事实的前提下改写成自然、可发布的种草笔记。",
+            user_prompt=(
+                f"改写要求：{instruction or '提升表达、增强小红书语感'}\n\n"
+                f"标题：{title}\n\n正文：\n{body}"
+            ),
+        )
+
+    def generate_note(
+        self,
+        *,
+        model_config: ModelConfig,
+        api_key: str,
+        topic: str,
+        reference: str,
+        instruction: str,
+    ) -> dict[str, str]:
+        content = self._complete(
+            system_prompt="你是小红书内容策划，输出可发布的标题和正文。",
+            user_prompt=(
+                "请生成一篇小红书笔记，格式必须是：\n标题：...\n正文：...\n\n"
+                f"选题：{topic}\n参考材料：{reference or '无'}\n要求：{instruction or '自然、有信息密度'}"
+            ),
+        )
+        title = topic
+        body = content
+        for line in content.splitlines():
+            if line.startswith("标题："):
+                title = line.replace("标题：", "", 1).strip() or title
+                break
+        if "正文：" in content:
+            body = content.split("正文：", 1)[1].strip()
+        return {"title": title, "body": body}
+
+    def generate_titles(
+        self,
+        *,
+        model_config: ModelConfig,
+        api_key: str,
+        title: str,
+        body: str,
+        count: int,
+    ) -> list[str]:
+        content = self._complete(
+            system_prompt="你是小红书标题优化专家。",
+            user_prompt=f"请给出 {count} 个小红书标题，每行一个。直接输出标题内容，不要带编号或前缀。\n原标题：{title}\n正文：{body}",
+        )
+        return [line.strip(" -0123456789.、") for line in content.splitlines() if line.strip()][:count]
+
+    def generate_tags(
+        self,
+        *,
+        model_config: ModelConfig,
+        api_key: str,
+        title: str,
+        body: str,
+        count: int,
+    ) -> list[str]:
+        content = self._complete(
+            system_prompt="你是小红书 SEO 和话题标签专家。",
+            user_prompt=f"请给出 {count} 个小红书话题标签，只输出标签，用逗号或换行分隔。不要输出任何解释说明。\n标题：{title}\n正文：{body}",
+        )
+        separators = content.replace("，", ",").replace("\n", ",").split(",")
+        return [item.strip().lstrip("#") for item in separators if item.strip()][:count]
+
+    def polish_text(
+        self,
+        *,
+        model_config: ModelConfig,
+        api_key: str,
+        text: str,
+        instruction: str,
+    ) -> str:
+        return self._complete(
+            system_prompt="你是小红书正文润色编辑。",
+            user_prompt=f"润色要求：{instruction or '更自然、清晰、有种草感'}\n\n原文：\n{text}",
+        )

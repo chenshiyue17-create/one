@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+ENGINE_PATH = str(Path(__file__).resolve().parent.parent / "downloader_engine")
+if ENGINE_PATH not in sys.path:
+    sys.path.insert(0, ENGINE_PATH)
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -7,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.app.api import accounts, ai, auth, auto_tasks, drafts, files, keyword_groups, login_sessions, model_configs, notes, notifications, publish, tags, tasks
+from backend.app.api import accounts, ai, auth, auto_tasks, drafts, files, keyword_groups, login_sessions, model_configs, notes, notifications, publish, tags, tasks, downloader
 from backend.app.api.platforms import registry
 from backend.app.api.platforms.xhs import analytics, crawl, creator, monitoring, pc
 from backend.app.core.config import get_settings
@@ -18,6 +24,25 @@ from backend.app.services.scheduler_service import run_due_auto_tasks, shutdown_
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Create default user for "one-click" startup
+    from sqlalchemy import select
+    from backend.app.core.database import SessionLocal
+    from backend.app.models import User
+    from backend.app.core.security import hash_password
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == "admin"))
+        if not user:
+            user = User(username="admin", password_hash=hash_password("password123"))
+            db.add(user)
+            db.commit()
+        
+        # Purge expired crawl cache
+        from backend.app.services.crawl_cache_service import purge_expired_cache
+        purged = purge_expired_cache(db)
+        if purged > 0:
+            from loguru import logger
+            logger.info(f"Purged {purged} expired crawl cache entries")
+    
     settings = get_settings()
     scheduler = None
     if settings.scheduler_enabled:
@@ -66,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(crawl.router, prefix="/api")
     app.include_router(monitoring.router, prefix="/api")
     app.include_router(auto_tasks.router, prefix="/api")
+    app.include_router(downloader.router, prefix="/api")
 
     # Serve pre-built frontend in production / Docker
     if settings.frontend_serve_static:

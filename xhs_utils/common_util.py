@@ -7,11 +7,35 @@ import json
 
 import execjs
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 from loguru import logger
 from dotenv import load_dotenv
 
 from xhs_utils.http_util import REQUEST_TIMEOUT
 from xhs_utils.xhs_creator_util import generate_xsc
+
+class TLSAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).proxy_manager_for(*args, **kwargs)
+
+def _make_request(method, url, **kwargs):
+    with requests.Session() as session:
+        session.mount("https://", TLSAdapter())
+        session.trust_env = False
+        kwargs['headers'] = kwargs.get('headers', {})
+        kwargs['headers']['Connection'] = 'close'
+        kwargs['proxies'] = {"http": None, "https": None}
+        return session.request(method, url, **kwargs)
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'static')
 _WEBSECTIGA_ENV_PATH = os.path.join(_STATIC_DIR, 'xhs_websectiga_env.js')
@@ -72,7 +96,8 @@ def fetch_sec_cookies(cookies, headers):
     h.update(sign_h)
     data_str = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
     try:
-        resp = requests.post(
+        resp = _make_request(
+            'POST',
             _AS_URL + api,
             headers=h,
             cookies=cookies,
@@ -110,7 +135,8 @@ def fetch_gid(cookies, headers):
     h.update(sign_h)
     data_str = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
     try:
-        resp = requests.post(
+        resp = _make_request(
+            'POST',
             _AS_URL + api,
             headers=h,
             cookies=cookies,

@@ -104,12 +104,19 @@ def _note_matches_value(note: Note, value: str) -> bool:
 
 def _serialize_top_note(note: Note) -> dict[str, Any]:
     metrics = _note_metrics(note)
+    
+    # Calculate potential score: Engagement / (Days + 1) ^ 1.2
+    # This rewards newer content with high engagement
+    days_old = (shanghai_now() - note.created_at).days
+    potential_score = round(metrics["engagement"] / ((days_old + 1) ** 1.2), 2)
+    
     return {
         "id": note.id,
         "note_id": note.note_id,
         "title": note.title,
         "author_name": note.author_name,
         "created_at": note.created_at.isoformat(),
+        "potential_score": potential_score,
         **metrics,
     }
 
@@ -384,11 +391,19 @@ def overview(
 @router.get("/top-content")
 def top_content(
     limit: int = Query(20, ge=1, le=100),
+    sort_by: Literal["engagement", "potential"] = "engagement",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    notes = sorted(_owned_notes(db, current_user), key=lambda note: _note_metrics(note)["engagement"], reverse=True)
-    return {"items": [_serialize_top_note(note) for note in notes[:limit]]}
+    notes = _owned_notes(db, current_user)
+    serialized = [_serialize_top_note(note) for note in notes]
+    
+    if sort_by == "potential":
+        serialized.sort(key=lambda x: x["potential_score"], reverse=True)
+    else:
+        serialized.sort(key=lambda x: x["engagement"], reverse=True)
+        
+    return {"items": serialized[:limit]}
 
 
 @router.get("/hot-topics")
@@ -438,15 +453,30 @@ def comment_insights(
     db: Session = Depends(get_db),
 ):
     comments = _owned_comments(db, current_user)
+    
+    # Improved keyword extraction logic
+    import re
+    
+    # Common stop words/particles for XHS comments
+    stop_words = {"的", "了", "在", "是", "我", "你", "他", "它", "们", "这", "那", "就", "也", "还", "不", "都", "好", "很", "真", "太"}
+    
     repeated_terms = Counter()
     for comment in comments:
-        for term in ("价格", "多少钱", "链接", "适合", "怎么", "哪里", "推荐", "通勤"):
+        # Split by non-alphanumeric/non-Chinese characters
+        words = re.findall(r'[\u4e00-\u9fa5]{2,}', comment.content) # Only Chinese words with 2+ chars
+        for word in words:
+            if word not in stop_words:
+                repeated_terms[word] += 1
+                
+        # Also track specific high-value intent keywords
+        for term in ("价格", "多少钱", "链接", "适合", "怎么", "哪里", "推荐", "通勤", "避雷", "教程", "哪里买"):
             if term in comment.content:
                 repeated_terms[term] += 1
+                
     return {
         "total_comments": len(comments),
         "question_count": len([comment for comment in comments if "?" in comment.content or "？" in comment.content]),
-        "top_terms": [{"term": term, "count": count} for term, count in repeated_terms.most_common(10)],
+        "top_terms": [{"term": term, "count": count} for term, count in repeated_terms.most_common(20)],
         "top_comments": [
             {
                 "id": comment.id,

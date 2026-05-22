@@ -23,3 +23,6 @@ passlib[bcrypt]
 python-jose[cryptography]
 Pillow>=9.2
 pyyaml
+browser-cookie3
+pyperclip
+fastmcp

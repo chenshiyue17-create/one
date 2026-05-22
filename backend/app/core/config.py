@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     # Scheduler
     scheduler_enabled: bool = False
     scheduler_interval_seconds: int = 60
+    daily_silent_update_enabled: bool = True
 
     # Asset storage
     asset_storage_type: str = "local"

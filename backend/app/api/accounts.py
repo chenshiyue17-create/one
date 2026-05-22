@@ -102,6 +102,66 @@ def get_accounts(
     )
 
 
+class BrowserCookieImportRequest(BaseModel):
+    browser_type: str = Field(pattern="^(chrome|edge|firefox|safari|auto)$", default="auto")
+    sub_type: str = Field(pattern="^(pc|creator)$", default="pc")
+    sync_creator: bool = False
+
+
+@router.post("/from-browser")
+def import_from_browser(
+    payload: BrowserCookieImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    pc_adapter: XhsPcLoginAdapter = Depends(get_pc_account_adapter),
+    creator_adapter: XhsCreatorLoginAdapter = Depends(get_creator_account_adapter),
+    self_profile_adapter: XhsSelfProfileAdapter = Depends(get_xhs_self_profile_adapter),
+):
+    from xhs_utils.browser_cookie import get_xhs_cookies_from_browser
+    
+    browser_type = None if payload.browser_type == "auto" else payload.browser_type
+    cookie_string, error = get_xhs_cookies_from_browser(browser_type)
+    
+    if error or not cookie_string:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Failed to retrieve cookies from browser: {error}"
+        )
+        
+    adapter = _select_adapter(payload.sub_type, pc_adapter, creator_adapter)
+    try:
+        user_info = adapter.get_user_info(trans_cookies(cookie_string))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Browser cookies are invalid or expired") from exc
+
+    if payload.sub_type == "pc":
+        try:
+            self_profile = self_profile_adapter.get_self_profile(cookie_header_from_text(cookie_string))
+            user_info = enrich_user_info_with_xhs_self_profile(user_info, self_profile)
+        except Exception:
+            pass
+
+    account, action = upsert_platform_account_from_login(
+        db=db,
+        user_id=current_user.id,
+        platform="xhs",
+        sub_type=payload.sub_type,
+        user_info=user_info,
+        cookies_text=cookie_string,
+    )
+    if payload.sub_type == "pc" and payload.sync_creator:
+        _sync_creator_account_from_pc_cookie(
+            db=db,
+            user_id=current_user.id,
+            platform="xhs",
+            cookie_string=cookie_string,
+            creator_adapter=creator_adapter,
+        )
+    db.commit()
+    db.refresh(account)
+    return serialize_account(account, action)
+
+
 @router.post("/import-cookie")
 def import_cookie(
     payload: CookieImportRequest,

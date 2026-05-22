@@ -432,6 +432,19 @@ export async function crawlXhsDataStream(
   return result;
 }
 
+export async function downloadXhsNote(payload: { url: string; cookie?: string; work_path?: string; task_id?: string }): Promise<any> {
+  const response = await http.post("/fast-downloader/detail", {
+    ...payload,
+    download: true
+  });
+  return response.data;
+}
+
+export async function fetchXhsUserNotes(payload: { account_id: number; user_url: string }): Promise<{ items: XhsSearchNote[] }> {
+  const response = await http.post<{ items: XhsSearchNote[] }>("/xhs/crawl/user-notes", payload);
+  return response.data;
+}
+
 export async function fetchXhsNoteDetail(payload: { account_id: number; url: string }): Promise<XhsSearchNote> {
   const response = await http.post<XhsSearchNote>("/xhs/pc/notes/detail", payload);
   return response.data;
@@ -773,6 +786,17 @@ export async function importXhsCookieAccount(payload: {
 }): Promise<PlatformAccount> {
   const response = await http.post<PlatformAccount>("/accounts/import-cookie", {
     platform: "xhs",
+    ...payload
+  });
+  return response.data;
+}
+
+export async function importXhsCookieFromBrowser(payload: {
+  sub_type: "pc" | "creator";
+  browser_type: "chrome" | "edge" | "firefox" | "safari" | "auto";
+  sync_creator?: boolean;
+}): Promise<PlatformAccount> {
+  const response = await http.post<PlatformAccount>("/accounts/from-browser", {
     ...payload
   });
   return response.data;

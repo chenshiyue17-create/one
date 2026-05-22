@@ -19,6 +19,7 @@ from backend.app.api.platforms.xhs.pc import (
 )
 from backend.app.api.tasks import serialize_task
 from backend.app.core.database import get_db
+from backend.app.services.crawl_cache_service import generate_cache_key, get_cache, set_cache
 from backend.app.core.deps import get_current_user
 from backend.app.models import Note, NoteAsset, PlatformAccount, Task, User
 
@@ -43,7 +44,7 @@ class CrawlNoteUrlsRequest(BaseModel):
 class CrawlUserNotesRequest(BaseModel):
     account_id: int
     user_url: str = Field(min_length=1)
-    save_to_library: bool = True
+    save_to_library: bool = False
 
 
 class DataCrawlRequest(BaseModel):
@@ -114,6 +115,8 @@ def _fail_task(db: Session, task: Task, error: str) -> None:
 
 
 def _data_items(raw_payload: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_payload, list):
+        return [item for item in raw_payload if isinstance(item, dict)]
     if not isinstance(raw_payload, dict):
         return []
     data = raw_payload.get("data") if isinstance(raw_payload.get("data"), dict) else raw_payload
@@ -232,6 +235,23 @@ def crawl_search_notes(
 ):
     account = _owned_pc_account(db, current_user, payload.account_id)
     cookies = _get_owned_pc_account_cookies(db, current_user, payload.account_id)
+    
+    # Cache check
+    cache_key = generate_cache_key("search", {"keyword": payload.keyword, "page": payload.page})
+    cached_data = get_cache(db, cache_key)
+    if cached_data:
+        from loguru import logger
+        logger.info(f"Using cached results for search: {payload.keyword} (page {payload.page})")
+        normalized_items = [_normalize_search_item(item) for item in _data_items(cached_data)]
+        return {
+            "task": None,
+            "result_count": len(normalized_items),
+            "saved_count": 0,
+            "items": normalized_items,
+            "raw": cached_data,
+            "cached": True
+        }
+
     task = _create_crawl_task(
         db,
         current_user,
@@ -242,6 +262,10 @@ def crawl_search_notes(
     if not success:
         _fail_task(db, task, message or "XHS search crawl failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message or "XHS search crawl failed")
+
+    # Set cache
+    if raw_payload:
+        set_cache(db, cache_key, raw_payload)
 
     normalized_items = [_normalize_search_item(item) for item in _data_items(raw_payload)]
     saved_notes = _save_normalized_notes(db, account, normalized_items) if payload.save_to_library else []
@@ -254,7 +278,7 @@ def crawl_search_notes(
         "task": serialize_task(task),
         "result_count": len(normalized_items),
         "saved_count": len(saved_notes),
-        "items": [_serialize_note(note) for note in saved_notes],
+        "items": normalized_items,
         "raw": raw_payload,
     }
 
@@ -277,10 +301,20 @@ def crawl_note_urls(
     adapter = adapter_factory(cookies)
     normalized_items: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    
+    from loguru import logger
     for url in payload.urls:
+        cache_key = generate_cache_key("note_detail", {"url": url})
+        cached_data = get_cache(db, cache_key)
+        if cached_data:
+            logger.info(f"Using cached result for note: {url}")
+            normalized_items.append(_normalize_detail_payload(cached_data, source_url=url))
+            continue
+
         success, message, raw_payload = adapter.get_note_info(url)
         if success:
-            normalized_items.append(_normalize_detail_payload(raw_payload or {}))
+            set_cache(db, cache_key, raw_payload)
+            normalized_items.append(_normalize_detail_payload(raw_payload or {}, source_url=url))
         else:
             errors.append({"url": url, "error": message or "XHS note detail crawl failed"})
 
@@ -306,8 +340,27 @@ def crawl_user_notes(
     db: Session = Depends(get_db),
     adapter_factory=Depends(get_xhs_pc_api_adapter_factory),
 ):
+    from loguru import logger
+    logger.info(f"Crawling user notes for URL: {payload.user_url}")
+    
     account = _owned_pc_account(db, current_user, payload.account_id)
     cookies = _get_owned_pc_account_cookies(db, current_user, payload.account_id)
+
+    # Cache check
+    cache_key = generate_cache_key("user_notes", {"user_url": payload.user_url})
+    cached_data = get_cache(db, cache_key)
+    if cached_data:
+        logger.info(f"Using cached results for user notes: {payload.user_url}")
+        normalized_items = [_normalize_search_item(item) for item in _data_items(cached_data)]
+        return {
+            "task": None,
+            "result_count": len(normalized_items),
+            "saved_count": 0,
+            "items": normalized_items,
+            "raw": cached_data,
+            "cached": True
+        }
+
     task = _create_crawl_task(
         db,
         current_user,
@@ -319,7 +372,15 @@ def crawl_user_notes(
         _fail_task(db, task, message or "XHS user notes crawl failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message or "XHS user notes crawl failed")
 
+    # Set cache
+    if raw_payload:
+        set_cache(db, cache_key, raw_payload)
+
+    logger.info(f"Raw payload notes count: {len(raw_payload) if isinstance(raw_payload, list) else 'Not a list'}")
+    
     normalized_items = [_normalize_search_item(item) for item in _data_items(raw_payload)]
+    logger.info(f"Normalized items count: {len(normalized_items)}")
+    
     saved_notes = _save_normalized_notes(db, account, normalized_items) if payload.save_to_library else []
     task = _complete_task(
         db,
@@ -330,7 +391,7 @@ def crawl_user_notes(
         "task": serialize_task(task),
         "result_count": len(normalized_items),
         "saved_count": len(saved_notes),
-        "items": [_serialize_note(note) for note in saved_notes],
+        "items": normalized_items,
         "raw": raw_payload,
     }
 

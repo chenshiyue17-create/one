@@ -78,25 +78,37 @@ def _classify_error(exc: Exception) -> str:
 def _crawl_for_target(
     adapter: XhsPcApiAdapter,
     target: MonitoringTarget,
+    db: Session | None = None,
 ) -> tuple[bool, list[dict[str, Any]], str]:
+    from backend.app.services.crawl_cache_service import generate_cache_key, set_cache
+
     try:
         if target.target_type in ("keyword", "brand"):
             success, message, raw = adapter.search_note(target.value, page=1)
+            if success and raw and db:
+                cache_key = generate_cache_key("search", {"keyword": target.value, "page": 1})
+                set_cache(db, cache_key, raw)
             if not success:
                 return False, [], message or "search failed"
             items = [_normalize_search_item(item) for item in _data_items(raw)]
             return True, items, ""
         elif target.target_type == "account":
             success, message, raw = adapter.get_user_notes(target.value)
+            if success and raw and db:
+                cache_key = generate_cache_key("user_notes", {"user_url": target.value})
+                set_cache(db, cache_key, raw)
             if not success:
                 return False, [], message or "user notes failed"
             items = [_normalize_search_item(item) for item in _data_items(raw)]
             return True, items, ""
         elif target.target_type == "note_url":
             success, message, raw = adapter.get_note_info(target.value)
+            if success and raw and db:
+                cache_key = generate_cache_key("note_detail", {"url": target.value})
+                set_cache(db, cache_key, raw)
             if not success:
                 return False, [], message or "note detail failed"
-            items = [_normalize_detail_payload(raw or {})]
+            items = [_normalize_detail_payload(raw or {}, source_url=target.value)]
             return True, items, ""
         else:
             return False, [], f"unsupported target_type: {target.target_type}"
@@ -209,7 +221,7 @@ def execute_monitoring_refresh(
     factory = adapter_factory or (lambda c: XhsPcApiAdapter(c))
     adapter = factory(cookies)
 
-    ok, normalized_items, error_msg = _crawl_for_target(adapter, target)
+    ok, normalized_items, error_msg = _crawl_for_target(adapter, target, db=db)
 
     if ok and normalized_items:
         _save_normalized_notes(db, account, normalized_items)

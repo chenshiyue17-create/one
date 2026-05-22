@@ -1,5 +1,6 @@
 import {
   CheckOutlined,
+  CloudDownloadOutlined,
   CommentOutlined,
   DatabaseOutlined,
   HeartOutlined,
@@ -12,12 +13,13 @@ import {
   RightOutlined,
   SearchOutlined,
   StarOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Input, Row, Select, Space, Spin, Tag, Typography } from "antd";
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { fetchAccounts, fetchSavedNoteIds, fetchXhsNoteComments, fetchXhsNoteDetail, saveXhsNotesToLibrary, searchXhsNotes } from "../../../lib/api";
+import { downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsNoteComments, fetchXhsNoteDetail, fetchXhsUserNotes, saveXhsNotesToLibrary, searchXhsNotes } from "../../../lib/api";
 import type { NoteComment, PlatformAccount, XhsSearchNote, XhsSearchOptions } from "../../../types";
 
 const { Title, Text, Paragraph } = Typography;
@@ -75,6 +77,7 @@ export function XhsDiscoveryPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [keyword, setKeyword] = useState("");
   const [noteUrl, setNoteUrl] = useState("");
+  const [bloggerUrl, setBloggerUrl] = useState("");
   const [filters, setFilters] = useState({ sort_type_choice: 0, note_type: 0, note_time: 0, note_range: 0, pos_distance: 0, geo: "" });
   const [notes, setNotes] = useState<XhsSearchNote[]>([]);
   const [page, setPage] = useState(1);
@@ -83,6 +86,7 @@ export function XhsDiscoveryPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [isFetchingBlogger, setIsFetchingBlogger] = useState(false);
   const [isFetchingDetail, setIsFetchingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchedKeyword, setSearchedKeyword] = useState("");
@@ -94,6 +98,7 @@ export function XhsDiscoveryPage() {
   const [commentPreviewByNoteId, setCommentPreviewByNoteId] = useState<Record<string, NoteComment[]>>({});
   const [commentPreviewErrors, setCommentPreviewErrors] = useState<Record<string, string>>({});
   const [loadingCommentNoteIds, setLoadingCommentNoteIds] = useState<string[]>([]);
+  const [downloadingNoteIds, setDownloadingNoteIds] = useState<string[]>([]);
 
   const pcAccounts = useMemo(() => accounts.filter((a) => a.platform === "xhs" && a.sub_type === "pc"), [accounts]);
   const pcAccountOptions = useMemo(() => pcAccounts.map((a) => ({ value: a.id, label: `${a.nickname || `PC ${a.id}`} · ${a.status}` })), [pcAccounts]);
@@ -148,6 +153,17 @@ export function XhsDiscoveryPage() {
     setSelectedNote((c) => c?.note_id === note.note_id ? merged : c); return merged;
   }
 
+  async function handleDownloadNote(note: XhsSearchNote) {
+    const url = getPreviewNoteUrl(note); if (!url) return;
+    setDownloadingNoteIds((c) => [...c, note.note_id]);
+    try {
+      const cookie = localStorage.getItem("xhs_cookie") || "";
+      await downloadXhsNote({ url, cookie });
+      // 这里可以加个成功的提示
+    } catch { setError("下载失败，请检查后端集成。"); } 
+    finally { setDownloadingNoteIds((c) => c.filter((id) => id !== note.note_id)); }
+  }
+
   async function handleFetchUrlDetail() {
     setError(null); if (!selectedAccountId) { setError("请先选择一个 PC 账号。"); return; }
     const cleanUrl = noteUrl.trim(); if (!cleanUrl) { setError("请输入小红书笔记 URL。"); return; }
@@ -156,8 +172,22 @@ export function XhsDiscoveryPage() {
       const detail = await fetchXhsNoteDetail({ account_id: selectedAccountId, url: cleanUrl });
       const merged = { ...detail, note_url: detail.note_url || cleanUrl };
       setNotes([merged]); setDetailMediaIndex(0); setSelectedNote(merged); setHasMore(false); setPage(1);
-      setSearchedKeyword("URL 直查"); setSavedNoteIds([]); setCommentPreviewByNoteId({}); setCommentPreviewErrors({});
-    } catch (err: unknown) { const a = err as { response?: { status?: number; data?: { detail?: string } }; message?: string }; setError(a?.response?.data?.detail ? `[${a.response.status}] ${a.response.data.detail}` : `URL 直查失败：${a?.message || "请检查网络"}`); } finally { setIsFetchingUrl(false); }
+      setSearchedKeyword("笔记直查");
+      setSavedNoteIds([]); setCommentPreviewByNoteId({}); setCommentPreviewErrors({});
+    } catch (err: unknown) { const a = err as { response?: { status?: number; data?: { detail?: string } }; message?: string }; setError(a?.response?.data?.detail ? `[${a.response.status}] ${a.response.data.detail}` : `直查失败：${a?.message || "请检查网络"}`); } finally { setIsFetchingUrl(false); }
+  }
+
+  async function handleFetchBloggerNotes() {
+    setError(null); if (!selectedAccountId) { setError("请先选择一个 PC 账号。"); return; }
+    const cleanUrl = bloggerUrl.trim(); if (!cleanUrl) { setError("请输入博主主页 URL。"); return; }
+    setIsFetchingBlogger(true);
+    try {
+      const response = await fetchXhsUserNotes({ account_id: selectedAccountId, user_url: cleanUrl });
+      setNotes(response.items);
+      setHasMore(false); setPage(1);
+      setSearchedKeyword("博主直查");
+      setSavedNoteIds([]); setCommentPreviewByNoteId({}); setCommentPreviewErrors({});
+    } catch (err: unknown) { const a = err as { response?: { status?: number; data?: { detail?: string } }; message?: string }; setError(a?.response?.data?.detail ? `[${a.response.status}] ${a.response.data.detail}` : `博主查询失败：${a?.message || "请检查网络"}`); } finally { setIsFetchingBlogger(false); }
   }
 
   async function openDetail(note: XhsSearchNote) {
@@ -212,7 +242,10 @@ export function XhsDiscoveryPage() {
           </Row>
           <Row gutter={12} style={{ marginTop: 12 }} align="bottom">
             <Col span={6}><div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12 }}>笔记 URL</Text></div><Input value={noteUrl} onChange={(e) => setNoteUrl(e.target.value)} placeholder="https://www.xiaohongshu.com/explore/..." /></Col>
-            <Col><Button icon={<SearchOutlined />} loading={isFetchingUrl} disabled={noPcAccount} onClick={handleFetchUrlDetail}>URL 直查</Button></Col>
+            <Col><Button icon={<SearchOutlined />} loading={isFetchingUrl} disabled={noPcAccount} onClick={handleFetchUrlDetail}>笔记直查</Button></Col>
+            
+            <Col span={6} style={{ marginLeft: 24 }}><div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12 }}>博主主页</Text></div><Input value={bloggerUrl} onChange={(e) => setBloggerUrl(e.target.value)} placeholder="https://www.xiaohongshu.com/user/profile/..." /></Col>
+            <Col><Button icon={<UserOutlined />} loading={isFetchingBlogger} disabled={noPcAccount} onClick={handleFetchBloggerNotes}>博主直查</Button></Col>
           </Row>
         </form>
         {error && <Alert message={error} type="error" showIcon style={{ marginTop: 12 }} closable onClose={() => setError(null)} />}
@@ -250,6 +283,7 @@ export function XhsDiscoveryPage() {
                         <Button size="small" type={savedNoteIds.includes(note.note_id) ? "default" : "primary"} ghost={!savedNoteIds.includes(note.note_id)} icon={savedNoteIds.includes(note.note_id) ? <CheckOutlined /> : <DatabaseOutlined />} loading={savingNoteIds.includes(note.note_id)} disabled={savedNoteIds.includes(note.note_id)} onClick={() => void handleSaveNote(note)}>
                           {savedNoteIds.includes(note.note_id) ? "已保存" : "保存"}
                         </Button>
+                        <Button size="small" icon={<CloudDownloadOutlined />} loading={downloadingNoteIds.includes(note.note_id)} onClick={() => void handleDownloadNote(note)}>下载</Button>
                         <Button size="small" icon={<CommentOutlined />} loading={loadingCommentNoteIds.includes(note.note_id)} onClick={() => void handlePreviewComments(note)}>
                           {commentPreviewByNoteId[note.note_id] ? "收起" : "评论"}
                         </Button>
@@ -344,6 +378,11 @@ export function XhsDiscoveryPage() {
                 loading={savingNoteIds.includes(selectedNote.note_id)}
                 disabled={savedNoteIds.includes(selectedNote.note_id)}
               >{savedNoteIds.includes(selectedNote.note_id) ? "已保存" : "保存到内容库"}</Button>
+              <Button
+                icon={<CloudDownloadOutlined />}
+                loading={downloadingNoteIds.includes(selectedNote.note_id)}
+                onClick={() => void handleDownloadNote(selectedNote)}
+              >下载视频/图文</Button>
               <Button icon={<CommentOutlined />} onClick={() => void handlePreviewComments(selectedNote)}>{commentPreviewByNoteId[selectedNote.note_id] ? "收起评论" : "查看评论"}</Button>
               {getPreviewNoteUrl(selectedNote) && <Button type="primary" icon={<LinkOutlined />} href={getPreviewNoteUrl(selectedNote)} target="_blank" rel="noreferrer">打开原文</Button>}
             </Space>

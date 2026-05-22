@@ -59,8 +59,15 @@ async function bootstrap(): Promise<void> {
   }
   bootstrapped = true;
   if (!api.hasRefreshToken()) {
-    emit({ status: "anonymous", user: null, error: null });
-    return;
+    // Try auto-login with default admin credentials for one-click startup
+    try {
+      const payload = await api.login({ username: "admin", password: "password123" });
+      emit({ status: "authenticated", user: payload.user, error: null });
+      return;
+    } catch {
+      emit({ status: "anonymous", user: null, error: null });
+      return;
+    }
   }
 
   emit({ ...snapshot, status: "checking", error: null });

@@ -13,7 +13,7 @@ from backend.app.core.deps import get_current_user
 from backend.app.core.security import decrypt_text
 from backend.app.models import AiDraft, AiGeneratedAsset, ModelConfig, Task, User
 from backend.app.schemas.common import paginated
-from backend.app.services.ai_service import ImageAiClient, OpenAICompatibleImageClient, OpenAICompatibleTextClient, TextAiClient
+from backend.app.services.ai_service import GeminiCliTextClient, ImageAiClient, OpenAICompatibleImageClient, OpenAICompatibleTextClient, TextAiClient
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -66,7 +66,7 @@ class DescribeImageRequest(BaseModel):
 
 
 def get_text_ai_client() -> TextAiClient:
-    return OpenAICompatibleTextClient()
+    return GeminiCliTextClient()
 
 
 def get_image_ai_client() -> ImageAiClient:
@@ -93,7 +93,16 @@ def _get_default_text_model(db: Session, current_user: User) -> ModelConfig:
         )
     ).first()
     if config is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Default text model is not configured")
+        # Return a dummy config for Gemini CLI
+        return ModelConfig(
+            id=0,
+            user_id=current_user.id,
+            name="Gemini CLI (Local)",
+            model_type="text",
+            provider="gemini-cli",
+            model_name="gemini",
+            is_default=True
+        )
     return config
 
 

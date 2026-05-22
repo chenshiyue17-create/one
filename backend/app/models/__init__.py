@@ -1,6 +1,7 @@
 from backend.app.models.ai import DEFAULT_TEXT_MODEL_NAME, AiDraft, AiGeneratedAsset, DraftAsset, ModelConfig
 from backend.app.models.api_log import ApiLog
 from backend.app.models.auto_task import AutoTask
+from backend.app.models.crawl_cache import CrawlCache
 from backend.app.models.keyword_group import KeywordGroup
 from backend.app.models.login_session import LoginSession
 from backend.app.models.monitoring import MonitoringSnapshot, MonitoringTarget

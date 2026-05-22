@@ -6,7 +6,22 @@ import time
 import cv2
 import numpy as np
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 from loguru import logger
+
+class TLSAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).proxy_manager_for(*args, **kwargs)
 from xhs_utils.cookie_util import trans_cookies
 from xhs_utils.http_util import REQUEST_TIMEOUT
 from xhs_utils.xhs_creator_util import get_upload_media_headers, get_post_note_headers, \
@@ -31,6 +46,15 @@ class XHS_Creator_Apis():
         self.edith_url = "https://edith.xiaohongshu.com"
         self.xhs_web_url = "https://www.xiaohongshu.com"
 
+    def _make_request(self, method, url, **kwargs):
+        with requests.Session() as session:
+            session.mount("https://", TLSAdapter())
+            session.trust_env = False
+            kwargs['headers'] = kwargs.get('headers', {})
+            kwargs['headers']['Connection'] = 'close'
+            kwargs['proxies'] = {"http": None, "https": None}
+            return session.request(method, url, **kwargs)
+
     def get_topic(self, keyword, cookies):
         try:
             api = "/web_api/sns/v1/search/topic"
@@ -49,7 +73,7 @@ class XHS_Creator_Apis():
             headers.update(generate_xsc(cookies['a1'], api, data))
             if data:
                 data = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
-            response = requests.post(self.edith_url + api, headers=headers, cookies=cookies, data=data.encode('utf-8'), timeout=REQUEST_TIMEOUT)
+            response = self._make_request('POST', self.edith_url + api, headers=headers, cookies=cookies, data=data.encode('utf-8'), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -66,7 +90,7 @@ class XHS_Creator_Apis():
             headers.update(h)
             if data:
                 data = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
-            response = requests.post(self.edith_url + api, headers=headers, cookies=cookies, data=data.encode('utf-8'), timeout=REQUEST_TIMEOUT)
+            response = self._make_request('POST', self.edith_url + api, headers=headers, cookies=cookies, data=data.encode('utf-8'), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -102,8 +126,8 @@ class XHS_Creator_Apis():
             params = get_fileIds_params(media_type)
             splice_api = splice_str(api, params)
 
-            headers.update(generate_xsc(cookies['a1'], splice_api))
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
+            headers.update(generate_xsc(cookies['a1'], splice_api, method='GET'))
+            response = self._make_request('GET', self.base_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success = res_json.get("success", False)
             msg = '获取fileIds成功' if success else (res_json.get("msg") or res_json.get("message") or "获取fileIds失败，请检查 Creator 账号 Cookie 是否有效")
@@ -142,7 +166,7 @@ class XHS_Creator_Apis():
             signature = signature_js.call('getSignature', message, fileIds, file_size, upload_host)
             headers = get_upload_media_headers(message, signature, token)
             api = f"/spectrum/{fileIds}"
-            response = requests.put(upload_url + api, headers=headers, data=file, cookies=cookies, timeout=REQUEST_TIMEOUT)
+            response = self._make_request('PUT', upload_url + api, headers=headers, data=file, cookies=cookies, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             if media_type == "video":
                 res['video_id'] = response.headers.get('X-Ros-Video-Id')
@@ -164,8 +188,8 @@ class XHS_Creator_Apis():
                 "resource_type": "0",
             }
             splice_api = splice_str(api, params)
-            headers.update(generate_xsc(cookies['a1'], splice_api))
-            response = requests.get(self.edith_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
+            headers.update(generate_xsc(cookies['a1'], splice_api, method='GET'))
+            response = self._make_request('GET', self.edith_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success = res_json["success"]
             if 'msg' in res_json:
@@ -189,8 +213,8 @@ class XHS_Creator_Apis():
             sign = sign_js.call('urlSing', file_id)
             params['sign'] = sign
             splice_api = splice_str(api, params)
-            headers.update(generate_xsc(cookies['a1'], splice_api))
-            response = requests.get(self.xhs_web_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
+            headers.update(generate_xsc(cookies['a1'], splice_api, method='GET'))
+            response = self._make_request('GET', self.xhs_web_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success, msg = res_json["success"], res_json["msg"]
         except Exception as e:
@@ -289,7 +313,7 @@ class XHS_Creator_Apis():
         headers['x-s'], headers['x-t'], headers['x-s-common'] = xs, str(xt), xs_common
         headers['x-rap-param'] = generate_x_rap_param(post_api, data)
 
-        response = requests.post(self.edith_url + post_api, headers=headers, data=data.encode('utf-8'), cookies=cookies, timeout=REQUEST_TIMEOUT)
+        response = self._make_request('POST', self.edith_url + post_api, headers=headers, data=data.encode('utf-8'), cookies=cookies, timeout=REQUEST_TIMEOUT)
         res_json = response.json()
         success, msg = res_json["success"], res_json["msg"]
         return success, msg, res_json
@@ -381,7 +405,7 @@ class XHS_Creator_Apis():
     #             "time": str(time),
     #             "is_recent": "false"
     #         }
-    #         response = requests.get(self.base_url + api, headers=headers, cookies=cookies, params=params)
+    #         response = self._make_request('GET', self.base_url + api, headers=headers, cookies=cookies, params=params)
     #         res_json = response.json()
     #         success = res_json["success"]
     #     except Exception as e:
@@ -422,8 +446,8 @@ class XHS_Creator_Apis():
             if page:
                 params["page"] = str(page)
             splice_api = splice_str(api, params)
-            headers.update(generate_xsc(cookies['a1'], splice_api))
-            response = requests.get(self.base_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
+            headers.update(generate_xsc(cookies['a1'], splice_api, method='GET'))
+            response = self._make_request('GET', self.base_url + splice_api, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
             res_json = response.json()
             success = res_json["success"]
         except Exception as e:

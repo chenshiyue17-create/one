@@ -216,57 +216,64 @@ def login_session(
     pc_adapter: XhsPcLoginAdapter = Depends(get_pc_login_adapter),
     creator_adapter: XhsCreatorLoginAdapter = Depends(get_creator_login_adapter),
 ):
-    session = db.get(LoginSession, session_id)
-    if session is None or session.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Login session not found")
-    if session.status in {"confirmed", "expired"}:
-        return {"session_id": session.id, "status": session.status, "qr_url": session.qr_url}
-    if session.sub_type not in {"pc", "creator"} or not session.qr_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported login session")
-
-    cookies, sync_creator = _load_temp_state(decrypt_text(session.encrypted_temp_cookies))
-    if session.sub_type == "pc":
-        if not session.code:
+    try:
+        session = db.get(LoginSession, session_id)
+        if session is None or session.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Login session not found")
+        if session.status in {"confirmed", "expired"}:
+            return {"session_id": session.id, "status": session.status, "qr_url": session.qr_url}
+        if session.sub_type not in {"pc", "creator"} or not session.qr_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported login session")
-        result = pc_adapter.check_qrcode_status(session.qr_id, session.code, cookies)
-        account_sub_type = "pc"
-        user_info = pc_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
-    else:
-        result = creator_adapter.check_qrcode_status(session.qr_id, cookies)
-        account_sub_type = "creator"
-        user_info = creator_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
-    session.status = result["status"]
-    session.encrypted_temp_cookies = encrypt_text(
-        _dump_temp_state(result["cookies"], sync_creator=sync_creator)
-    )
 
-    account_payload = None
-    creator_account_payload = None
-    if session.status == "confirmed":
-        account, action = _create_account_from_login(
-            db=db,
-            user_id=current_user.id,
-            sub_type=account_sub_type,
-            user_info=user_info,
-            cookies=result["cookies"],
+        cookies, sync_creator = _load_temp_state(decrypt_text(session.encrypted_temp_cookies))
+        if session.sub_type == "pc":
+            if not session.code:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported login session")
+            result = pc_adapter.check_qrcode_status(session.qr_id, session.code, cookies)
+            account_sub_type = "pc"
+            user_info = pc_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
+        else:
+            result = creator_adapter.check_qrcode_status(session.qr_id, cookies)
+            account_sub_type = "creator"
+            user_info = creator_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
+        session.status = result["status"]
+        session.encrypted_temp_cookies = encrypt_text(
+            _dump_temp_state(result["cookies"], sync_creator=sync_creator)
         )
-        account_payload = serialize_account(account, action)
-        if account_sub_type == "pc" and sync_creator:
-            creator_account_payload = _sync_creator_account_from_pc_login(
+
+        account_payload = None
+        creator_account_payload = None
+        if session.status == "confirmed":
+            account, action = _create_account_from_login(
                 db=db,
                 user_id=current_user.id,
-                pc_cookies=result["cookies"],
-                creator_adapter=creator_adapter,
+                sub_type=account_sub_type,
+                user_info=user_info,
+                cookies=result["cookies"],
             )
+            account_payload = serialize_account(account, action)
+            if account_sub_type == "pc" and sync_creator:
+                creator_account_payload = _sync_creator_account_from_pc_login(
+                    db=db,
+                    user_id=current_user.id,
+                    pc_cookies=result["cookies"],
+                    creator_adapter=creator_adapter,
+                )
 
-    db.commit()
-    return {
-        "session_id": session.id,
-        "status": session.status,
-        "qr_url": session.qr_url,
-        "account": account_payload,
-        "creator_account": creator_account_payload,
-    }
+        db.commit()
+        return {
+            "session_id": session.id,
+            "status": session.status,
+            "qr_url": session.qr_url,
+            "account": account_payload,
+            "creator_account": creator_account_payload,
+        }
+    except Exception as e:
+        import traceback
+        with open("debug_login.log", "a") as f:
+            f.write(f"Error in session {session_id}: {str(e)}\n")
+            f.write(traceback.format_exc() + "\n")
+        raise
 
 
 @router.post("/pc/phone/send-code")

@@ -36,21 +36,21 @@ class LazyStaticJS:
 signature_js = LazyStaticJS('xhs_creator_signature.js')
 sign_js = LazyStaticJS('xhs_creator_sign.js')
 
-def generate_xs(a1, api, data=''):
-    ret = _get_static_js('xhs_creator_260411.js').call('get_request_headers_params', api, data, a1)
+def generate_xs(a1, api, data='', method='POST'):
+    ret = _get_static_js('xhs_creator_260411.js').call('get_request_headers_params', api, data, a1, method)
     xs, xt = ret['xs'], ret['xt']
     if data:
         data = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
     return xs, xt, data
 
-def generate_xs_xs_common(a1, api, data=''):
-    ret = _get_static_js('xhs_creator_260411.js').call('get_request_headers_params', api, data, a1)
+def generate_xs_xs_common(a1, api, data='', method='POST'):
+    ret = _get_static_js('xhs_creator_260411.js').call('get_request_headers_params', api, data, a1, method)
 
     xs, xt, xs_common = ret['xs'], ret['xt'], ret['xs_common']
     return xs, xt, xs_common
 
-def generate_xsc(a1, api, data=''):
-    xs, xt, xs_common = generate_xs_xs_common(a1, api, data)
+def generate_xsc(a1, api, data='', method='POST'):
+    xs, xt, xs_common = generate_xs_xs_common(a1, api, data, method)
     x_b3_traceid = generate_x_b3_traceid()
     headers = {}
     headers['x-s'] = xs

@@ -52,6 +52,8 @@ scheduler:
   enabled: false
   # Polling interval in seconds
   interval_seconds: 60
+  # Daily silent update for monitoring targets (3 AM)
+  daily_silent_update_enabled: true
 
 frontend:
   # Set to true to serve pre-built frontend from backend (Docker/production)

@@ -12,6 +12,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  message,
 } from "antd";
 import {
   DeleteOutlined,
@@ -20,11 +21,12 @@ import {
   SafetyCertificateOutlined,
   SyncOutlined,
   UserOutlined,
+  ChromeOutlined,
 } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 
 import { AddAccountDrawer } from "../../../components/account/add-account-drawer";
-import { checkAccount, deleteAccount, fetchAccounts } from "../../../lib/api";
+import { checkAccount, deleteAccount, fetchAccounts, importXhsCookieFromBrowser } from "../../../lib/api";
 import { formatShanghaiTime } from "../../../lib/time";
 import type { PlatformAccount } from "../../../types";
 
@@ -60,6 +62,7 @@ export function XhsAccountsPage() {
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [checkingAccountIds, setCheckingAccountIds] = useState<Set<number>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +76,24 @@ export function XhsAccountsPage() {
       setError("账号列表加载失败。");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleBrowserSync() {
+    setIsSyncing(true);
+    try {
+      await importXhsCookieFromBrowser({
+        sub_type: "pc",
+        browser_type: "chrome",
+        sync_creator: true
+      });
+      message.success("已从 Chrome 自动同步账号");
+      void loadAccounts();
+    } catch (caught: any) {
+      const detail = caught?.response?.data?.detail;
+      message.error(detail || "未检测到 Chrome 浏览器的小红书登录状态。");
+    } finally {
+      setIsSyncing(false);
     }
   }
 
@@ -116,7 +137,20 @@ export function XhsAccountsPage() {
   }
 
   useEffect(() => {
-    void loadAccounts();
+    async function init() {
+      const loadedAccounts = await fetchAccounts("xhs");
+      setAccounts(loadedAccounts);
+      setIsLoading(false);
+
+      // If no accounts, try to auto-sync from browser once
+      if (loadedAccounts.length === 0) {
+        // We use a small timeout to not block the initial render
+        setTimeout(() => {
+          void handleBrowserSync();
+        }, 1000);
+      }
+    }
+    void init();
   }, []);
 
   return (
@@ -137,16 +171,26 @@ export function XhsAccountsPage() {
         </Text>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <Title level={3} style={{ margin: 0, color: "rgba(255,255,255,0.88)" }}>
+            <Title level={3} style={ { margin: 0, color: "rgba(255,255,255,0.88)" } }>
               账号矩阵
             </Title>
-            <Text style={{ color: "rgba(255,255,255,0.45)", marginTop: 4, display: "block" }}>
+            <Text style={ { color: "rgba(255,255,255,0.45)", marginTop: 4, display: "block" } }>
               管理 PC 与 Creator 账号、Cookie 状态、健康检查和账号作用域。
             </Text>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
-            绑定账号
-          </Button>
+          <Space>
+            <Button
+              icon={<ChromeOutlined />}
+              onClick={handleBrowserSync}
+              loading={isSyncing}
+              style={ { background: "rgba(22, 119, 255, 0.1)", borderColor: "rgba(22, 119, 255, 0.3)" } }
+            >
+              一键同步浏览器
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+              绑定账号
+            </Button>
+          </Space>
         </div>
       </div>
 

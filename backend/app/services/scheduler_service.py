@@ -409,6 +409,44 @@ def run_monitoring_refresh_once(platform: str = "xhs") -> dict[str, Any]:
         db.close()
 
 
+def run_daily_silent_crawl_refresh(platform: str = "xhs") -> None:
+    """Daily job to trigger actual crawls for monitoring targets, refreshing local data."""
+    from backend.app.services.monitoring_crawl_service import execute_monitoring_refresh
+    
+    db = SessionLocal()
+    try:
+        now = shanghai_now()
+        targets = db.scalars(
+            select(MonitoringTarget)
+            .where(
+                MonitoringTarget.platform == platform,
+                MonitoringTarget.status == "active",
+            )
+        ).all()
+        
+        refreshed = 0
+        for target in targets:
+            # Only refresh if not refreshed in the last 20 hours
+            if not target.last_refreshed_at or (now - target.last_refreshed_at).total_seconds() > 20 * 3600:
+                user = db.get(User, target.user_id)
+                if user:
+                    try:
+                        execute_monitoring_refresh(db, target, user, check_rate_limit=True)
+                        refreshed += 1
+                        # Sleep a bit to avoid triggering XHS rate limits
+                        import time
+                        time.sleep(10)
+                    except Exception as exc:
+                        logger.warning(f"Daily refresh failed for target {target.id}: {exc}")
+        
+        db.commit()
+        logger.info(f"Daily silent crawl refresh completed: {refreshed} targets refreshed")
+    except Exception as exc:
+        logger.error(f"run_daily_silent_crawl_refresh failed: {exc}")
+    finally:
+        db.close()
+
+
 def _get_text_model_for_user(db: Session, user_id: int):
     config = db.scalars(
         select(ModelConfig).where(
@@ -734,6 +772,19 @@ def build_due_publish_scheduler(interval_seconds: int, job_func, monitoring_job_
         max_instances=1,
         coalesce=True,
     )
+    
+    if get_settings().daily_silent_update_enabled:
+        scheduler.add_job(
+            run_daily_silent_crawl_refresh,
+            "cron",
+            hour=3,
+            minute=0,
+            id="daily_silent_crawl_refresh",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+    
     return scheduler
 
 

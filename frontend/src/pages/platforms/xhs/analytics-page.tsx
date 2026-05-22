@@ -95,6 +95,18 @@ const topContentColumns: ColumnsType<AnalyticsTopContent> = [
       `${formatNumber(record.likes)} / ${formatNumber(record.collects)} / ${formatNumber(record.comments)} / ${formatNumber(record.shares)}`,
   },
   {
+    title: "潜力值",
+    dataIndex: "potential_score",
+    key: "potential_score",
+    width: 90,
+    render: (value: number) => (
+      <Tag color={value > 100 ? "volcano" : "orange"} style={{ fontWeight: 600 }}>
+        {value}
+      </Tag>
+    ),
+    sorter: (a: AnalyticsTopContent, b: AnalyticsTopContent) => (a.potential_score || 0) - (b.potential_score || 0),
+  },
+  {
     title: "互动",
     dataIndex: "engagement",
     key: "engagement",

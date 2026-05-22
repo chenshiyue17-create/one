@@ -176,6 +176,7 @@ export type AnalyticsTopContent = {
   comments: number;
   shares: number;
   engagement: number;
+  potential_score?: number;
 };
 
 export type AnalyticsHotTopic = {

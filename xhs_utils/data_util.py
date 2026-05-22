@@ -6,8 +6,32 @@ from pathlib import Path
 
 import openpyxl
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 from loguru import logger
 from retry import retry
+
+class TLSAdapter(HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        context = create_urllib3_context()
+        context.set_ciphers('DEFAULT@SECLEVEL=1')
+        kwargs['ssl_context'] = context
+        return super(TLSAdapter, self).proxy_manager_for(*args, **kwargs)
+
+def _make_request(method, url, **kwargs):
+    with requests.Session() as session:
+        session.mount("https://", TLSAdapter())
+        session.trust_env = False
+        kwargs['headers'] = kwargs.get('headers', {})
+        kwargs['headers']['Connection'] = 'close'
+        kwargs['proxies'] = {"http": None, "https": None}
+        return session.request(method, url, **kwargs)
 
 from xhs_utils.http_util import REQUEST_TIMEOUT
 
@@ -212,13 +236,13 @@ def download_media(path, name, url, type):
         raise ValueError(f'{type} url is empty: {name}')
     file_path = Path(path) / f'{name}.{"jpg" if type == "image" else "mp4"}'
     if type == 'image':
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        response = _make_request('GET', url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         content = response.content
         with open(file_path, mode="wb") as f:
             f.write(content)
     elif type == 'video':
-        res = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
+        res = _make_request('GET', url, stream=True, timeout=REQUEST_TIMEOUT)
         res.raise_for_status()
         size = 0
         chunk_size = 1024 * 1024
