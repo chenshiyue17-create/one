@@ -47,37 +47,7 @@ export function SettingsPage() {
           </Card>
         </Col>
 
-        <Col xs={24}>
-          <Card
-            title={<span><HeartOutlined style={{ marginRight: 8, color: "#ff4d4f" }} />为爱发电</span>}
-          >
-            <Paragraph>
-              本项目完全开源免费，如果对你有帮助，欢迎请作者喝杯咖啡 :)
-            </Paragraph>
-            <Row gutter={24} justify="center">
-              <Col>
-                <div style={{ textAlign: "center" }}>
-                  <Image
-                    src={apiUrl("/files/media/wx_pay.png")}
-                    width={200}
-                    fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzFmMWYxZiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOGM4YzhjIiBmb250LXNpemU9IjE0Ij7lvq7kv6HmlK/ku5g8L3RleHQ+PC9zdmc+"
-                  />
-                  <Text type="secondary" style={{ display: "block", marginTop: 8 }}>微信支付</Text>
-                </div>
-              </Col>
-              <Col>
-                <div style={{ textAlign: "center" }}>
-                  <Image
-                    src={apiUrl("/files/media/zfb_pay.jpg")}
-                    width={200}
-                    fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzFmMWYxZiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOGM4YzhjIiBmb250LXNpemU9IjE0Ij7mlK/ku5jlrp3mlK/ku5g8L3RleHQ+PC9zdmc+"
-                  />
-                  <Text type="secondary" style={{ display: "block", marginTop: 8 }}>支付宝</Text>
-                </div>
-              </Col>
-            </Row>
-          </Card>
-        </Col>
+
       </Row>
     </div>
   );
