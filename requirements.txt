@@ -18,7 +18,7 @@ cryptography
 python-multipart
 apscheduler
 pytest
-httpx
+httpx[http2]
 passlib[bcrypt]
 python-jose[cryptography]
 Pillow>=9.2
@@ -26,3 +26,7 @@ pyyaml
 browser-cookie3
 pyperclip
 fastmcp
+emoji
+lxml
+aiosqlite
+aiofiles

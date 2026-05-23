@@ -7,9 +7,11 @@ import {
   Empty,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
+  Switch,
   Tag,
   Typography,
   message,
@@ -26,7 +28,16 @@ import {
 import { useEffect, useState } from "react";
 
 import { AddAccountDrawer } from "../../../components/account/add-account-drawer";
-import { checkAccount, deleteAccount, fetchAccounts, importXhsCookieFromBrowser } from "../../../lib/api";
+import {
+  checkAccount,
+  deleteAccount,
+  fetchAccounts,
+  getLocalHelperHealth,
+  importXhsCookieFromBrowser,
+  pushLocalXhsCookiesToServer,
+  readLocalXhsCookies,
+  type LocalCookieReadResult,
+} from "../../../lib/api";
 import { formatShanghaiTime } from "../../../lib/time";
 import type { PlatformAccount } from "../../../types";
 
@@ -63,6 +74,13 @@ export function XhsAccountsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [helperStatus, setHelperStatus] = useState<"unknown" | "online" | "offline">("unknown");
+  const [helperMessage, setHelperMessage] = useState("尚未检测");
+  const [helperBrowser, setHelperBrowser] = useState<"auto" | "chrome" | "edge" | "firefox" | "safari">("auto");
+  const [helperSubType, setHelperSubType] = useState<"pc" | "creator">("pc");
+  const [helperSyncCreator, setHelperSyncCreator] = useState(true);
+  const [cookiePreview, setCookiePreview] = useState<LocalCookieReadResult | null>(null);
+  const [isHelperBusy, setIsHelperBusy] = useState(false);
   const [checkingAccountIds, setCheckingAccountIds] = useState<Set<number>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +113,64 @@ export function XhsAccountsPage() {
     } finally {
       setIsSyncing(false);
     }
+  }
+
+  async function detectLocalHelper() {
+    setIsHelperBusy(true);
+    try {
+      const health = await getLocalHelperHealth();
+      setHelperStatus("online");
+      setHelperMessage(`${health.service} · ${health.bind}`);
+    } catch {
+      setHelperStatus("offline");
+      setHelperMessage("未检测到本地登录助手，请先运行 ./start-local-helper.sh");
+    } finally {
+      setIsHelperBusy(false);
+    }
+  }
+
+  async function handleReadLocalCookie() {
+    setIsHelperBusy(true);
+    setCookiePreview(null);
+    try {
+      const preview = await readLocalXhsCookies({ browser_type: helperBrowser });
+      setHelperStatus("online");
+      setHelperMessage(`读取到 ${preview.cookie_count} 个 Cookie`);
+      setCookiePreview(preview);
+      message.success("已读取本机浏览器 Cookie，请确认后再同步到服务器。");
+    } catch (caught: any) {
+      setHelperStatus("offline");
+      setHelperMessage(caught?.message || "读取 Cookie 失败");
+      message.error(caught?.message || "读取 Cookie 失败");
+    } finally {
+      setIsHelperBusy(false);
+    }
+  }
+
+  function handlePushLocalCookie() {
+    Modal.confirm({
+      title: "确认同步本机登录授权",
+      content: "本操作会把当前浏览器的小红书 Cookie 上传到服务器账号库，用于后续抓取/运营任务。不会绕过登录、验证码或风控。",
+      okText: "确认同步",
+      cancelText: "取消",
+      onOk: async () => {
+        setIsHelperBusy(true);
+        try {
+          await pushLocalXhsCookiesToServer({
+            browser_type: helperBrowser,
+            sub_type: helperSubType,
+            sync_creator: helperSubType === "pc" && helperSyncCreator,
+          });
+          message.success("本地授权已同步到服务器");
+          setCookiePreview(null);
+          void loadAccounts();
+        } catch (caught: any) {
+          message.error(caught?.message || "同步失败");
+        } finally {
+          setIsHelperBusy(false);
+        }
+      },
+    });
   }
 
   async function handleCheck(accountId: number) {
@@ -141,16 +217,9 @@ export function XhsAccountsPage() {
       const loadedAccounts = await fetchAccounts("xhs");
       setAccounts(loadedAccounts);
       setIsLoading(false);
-
-      // If no accounts, try to auto-sync from browser once
-      if (loadedAccounts.length === 0) {
-        // We use a small timeout to not block the initial render
-        setTimeout(() => {
-          void handleBrowserSync();
-        }, 1000);
-      }
     }
     void init();
+    void detectLocalHelper();
   }, []);
 
   return (
@@ -193,6 +262,66 @@ export function XhsAccountsPage() {
           </Space>
         </div>
       </div>
+
+      <Card
+        title={<span style={{ color: "rgba(255,255,255,0.88)", fontWeight: 600 }}>本地登录同步</span>}
+        extra={<Tag color={helperStatus === "online" ? "success" : helperStatus === "offline" ? "error" : "default"}>{helperStatus === "online" ? "助手在线" : helperStatus === "offline" ? "助手离线" : "未检测"}</Tag>}
+        style={{ background: "#1f1f1f", borderColor: "#303030", marginBottom: 16 }}
+        styles={{ body: { padding: 20 } }}
+      >
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} lg={8}>
+            <Text strong style={{ display: "block", color: "rgba(255,255,255,0.78)", marginBottom: 4 }}>服务器网页 + 本机登录授权</Text>
+            <Text type="secondary">助手只监听 127.0.0.1:8765。读取和上传都需要你点击触发。</Text>
+            <div style={{ marginTop: 8 }}>
+              <Text type={helperStatus === "offline" ? "danger" : "secondary"}>{helperMessage}</Text>
+            </div>
+          </Col>
+          <Col xs={24} lg={16}>
+            <Space wrap>
+              <Select
+                value={helperBrowser}
+                onChange={setHelperBrowser}
+                style={{ width: 130 }}
+                options={[
+                  { value: "auto", label: "自动检测" },
+                  { value: "chrome", label: "Chrome" },
+                  { value: "edge", label: "Edge" },
+                  { value: "firefox", label: "Firefox" },
+                  { value: "safari", label: "Safari" },
+                ]}
+              />
+              <Select
+                value={helperSubType}
+                onChange={setHelperSubType}
+                style={{ width: 120 }}
+                options={[
+                  { value: "pc", label: "PC 账号" },
+                  { value: "creator", label: "Creator" },
+                ]}
+              />
+              <Space>
+                <Switch checked={helperSyncCreator} onChange={setHelperSyncCreator} disabled={helperSubType !== "pc"} />
+                <Text type="secondary">同步 Creator</Text>
+              </Space>
+              <Button onClick={detectLocalHelper} loading={isHelperBusy}>检测助手</Button>
+              <Button onClick={handleReadLocalCookie} loading={isHelperBusy}>读取 Cookie</Button>
+              <Button type="primary" onClick={handlePushLocalCookie} loading={isHelperBusy} disabled={!cookiePreview?.has_required}>
+                确认同步到服务器
+              </Button>
+            </Space>
+            {cookiePreview ? (
+              <Alert
+                style={{ marginTop: 12 }}
+                type={cookiePreview.has_required ? "success" : "warning"}
+                showIcon
+                message={`已读取 ${cookiePreview.cookie_count} 个 Cookie`}
+                description={`关键 Cookie：${cookiePreview.has_required ? "已检测到" : "未检测到"}；预览：${cookiePreview.cookie_names.slice(0, 8).join(", ")}`}
+              />
+            ) : null}
+          </Col>
+        </Row>
+      </Card>
 
       {/* Section card */}
       <Card

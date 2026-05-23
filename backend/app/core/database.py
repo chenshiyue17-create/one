@@ -37,6 +37,7 @@ def init_db(bind=engine) -> None:
     import backend.app.models  # noqa: F401
 
     _run_alembic_migrations()
+    Base.metadata.create_all(bind=bind)
     _normalize_model_config_names(bind)
     _normalize_sqlite_datetime_storage(bind)
 

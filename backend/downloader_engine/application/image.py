@@ -51,7 +51,16 @@ class Image:
 
     @staticmethod
     def __extract_image_token(url: str) -> str:
-        return "/".join(url.split("/")[5:]).split("!")[0]
+        if not url:
+            return ""
+        # 兼容多种 URL 格式，提取 ID 部分
+        # 如 https://sns-img-al.xhscdn.com/1040g008317...!nd_v1_tplv_q90.jpg
+        # 或 https://ci.xiaohongshu.com/spectrum/1040g...
+        path = url.split("?")[0].split("!")[0]
+        parts = path.split("/")
+        if len(parts) > 3:
+            return parts[-1]
+        return ""
 
     @staticmethod
     def __get_live_link(items: list) -> list:

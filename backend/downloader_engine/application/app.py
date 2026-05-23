@@ -103,12 +103,12 @@ class XHS:
     VERSION_MAJOR = VERSION_MAJOR
     VERSION_MINOR = VERSION_MINOR
     VERSION_BETA = VERSION_BETA
-    LINK = compile(r"(?:https?://)?www\.xiaohongshu\.com/explore/\S+")
-    USER = compile(r"(?:https?://)?www\.xiaohongshu\.com/user/profile/[a-z0-9]+/\S+")
-    SHARE = compile(r"(?:https?://)?www\.xiaohongshu\.com/discovery/item/\S+")
-    SHORT = compile(r"(?:https?://)?xhslink\.com/[^\s\"<>\\^`{|}，。；！？、【】《》]+")
-    ID = compile(r"(?:explore|item)/(\S+)?\?")
-    ID_USER = compile(r"user/profile/[a-z0-9]+/(\S+)?\?")
+    LINK = compile(r"(?:https?://)?(?:www\.)?(?:xiaohongshu\.com|rednote\.com)/explore/\S+")
+    USER = compile(r"(?:https?://)?(?:www\.)?(?:xiaohongshu\.com|rednote\.com)/user/profile/[a-z0-9]+/(\S+)")
+    SHARE = compile(r"(?:https?://)?(?:www\.)?(?:xiaohongshu\.com|rednote\.com)/discovery/item/\S+")
+    SHORT = compile(r"(?:https?://)?(?:xhslink\.com|rednote\.com/[^\s\"<>\\^`{|}，。；！？、【】《》]+)")
+    ID = compile(r"(?:explore|item)/([a-zA-Z0-9]+)")
+    ID_USER = compile(r"user/profile/[a-z0-9]+/([a-zA-Z0-9]+)")
     __INSTANCE = None
     CLEANER = Cleaner()
 
@@ -418,13 +418,15 @@ class XHS:
     async def extract_links(
         self,
         url: str,
+        cookie: str = None,
     ) -> list:
         urls = []
         for i in url.split():
             if u := self.SHORT.search(i):
                 i = await self.html.request_url(
                     u.group(),
-                    False,
+                    content=False,
+                    cookie=cookie,
                 )
             if u := self.SHARE.search(i):
                 urls.append(u.group())

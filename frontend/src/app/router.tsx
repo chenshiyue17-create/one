@@ -5,6 +5,7 @@ import { ComingSoonPage } from "../components/platforms/coming-soon";
 import { ProtectedRoute, PublicOnlyRoute } from "../components/ui/protected-route";
 import { LoginPage } from "../pages/login/login-page";
 import { ModelConfigPage } from "../pages/models/model-config-page";
+import { OpsPage } from "../pages/ops/ops-page";
 import { PlatformSelectPage } from "../pages/platform-select/platform-select-page";
 import { SettingsPage } from "../pages/settings/settings-page";
 import { TaskCenterPage } from "../pages/tasks/task-center-page";
@@ -26,8 +27,9 @@ import { XhsVideoStudioPage } from "../pages/platforms/xhs/video-studio-page";
 import { XhsSectionPage } from "../pages/platforms/xhs/xhs-section-page";
 
 export function AppRouter() {
+  const basename = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/" element={<Navigate to="/platform-select" replace />} />
         <Route
@@ -78,6 +80,7 @@ export function AppRouter() {
           <Route path="/platforms/xhs/:section" element={<XhsSectionPage />} />
           <Route path="/tasks" element={<TaskCenterPage />} />
           <Route path="/models" element={<ModelConfigPage />} />
+          <Route path="/ops" element={<OpsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>

@@ -19,6 +19,7 @@ import {
   SendOutlined,
   SettingOutlined,
   ThunderboltOutlined,
+  ToolOutlined,
   StarOutlined,
   SunOutlined,
   UserOutlined,
@@ -72,6 +73,7 @@ const mainNavItems: MenuProps["items"] = [
 const footerNavItems: MenuProps["items"] = [
   { key: "/tasks", icon: <ScheduleOutlined />, label: "任务中心" },
   { key: "/models", icon: <RobotOutlined />, label: "模型配置" },
+  { key: "/ops", icon: <ToolOutlined />, label: "运维中心" },
   { key: "/settings", icon: <SettingOutlined />, label: "设置" },
 ];
 

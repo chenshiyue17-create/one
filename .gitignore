@@ -23,6 +23,7 @@ db.sqlite3
 *.db
 *.db-journal
 backend/app/storage/
+output/
 __pypackages__/
 .venv
 env/

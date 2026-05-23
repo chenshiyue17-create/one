@@ -9,7 +9,7 @@ from pathlib import Path
 # 从我们刚搬过来的引擎中导入
 import sys
 from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 from application.app import XHS
 from module.settings import Settings
@@ -28,31 +28,83 @@ async def get_xhs():
         await _xhs_instance.__aenter__()
     return _xhs_instance
 
+from sqlalchemy.orm import Session
+from backend.app.core.database import get_db
+from backend.app.core.deps import get_current_user
+from backend.app.models import User
+from backend.app.api.platforms.xhs.pc import _get_owned_pc_account_cookies
+from loguru import logger
+
 @router.post("/detail", response_model=ExtractData)
-async def handle_detail(extract: ExtractParams, xhs: XHS = Depends(get_xhs)):
-    # 直接复用之前在 app.py 里写的 handle 逻辑
-    async with xhs.semaphore:
-        url = await xhs.extract_links(extract.url)
-        if not url:
-            msg = "提取链接失败"
-            data = None
-        else:
-            try:
-                data = await xhs._deal_extract(
-                    url[0],
-                    extract.download,
-                    extract.index,
-                    not extract.skip,
-                    extract.cookie,
-                    extract.proxy,
-                    extract.work_path,
-                    task_id=extract.task_id
-                )
-                msg = "成功"
-            except Exception as e:
-                msg = f"发生错误: {str(e)}"
+async def handle_detail(
+    extract: ExtractParams, 
+    xhs: XHS = Depends(get_xhs),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        # 直接复用之前在 app.py 里写的 handle 逻辑
+        async with xhs.semaphore:
+            cookie = extract.cookie
+            if not cookie and extract.account_id:
+                try:
+                    cookie = _get_owned_pc_account_cookies(db, current_user, extract.account_id)
+                except Exception as e:
+                    logger.warning(f"Failed to get cookies for account {extract.account_id}: {e}")
+
+            url_list = await xhs.extract_links(extract.url, cookie=cookie)
+            if not url_list:
+                msg = "提取链接失败"
                 data = None
-        return ExtractData(message=msg, params=extract, data=data)
+            else:
+                url = url_list[0]
+                try:
+                    # 尝试优先使用带签名的 API 获取数据 (更稳定)
+                    from backend.app.adapters.xhs.pc_api_adapter import XhsPcApiAdapter
+                    from types import SimpleNamespace
+                    
+                    api_success = False
+                    if cookie:
+                        adapter = XhsPcApiAdapter(cookie)
+                        # 注意：adapter 里的方法是同步的，为了不阻塞可以使用 run_in_executor，
+                        # 但这里我们简单处理，直接调用
+                        success, message, raw_payload = adapter.get_note_info(url)
+                        if success:
+                            items = raw_payload.get("data", {}).get("items", [])
+                            if items:
+                                note_card = items[0].get("note_card") or items[0].get("note")
+                                if note_card:
+                                    # 使用 downloader_engine 的处理逻辑进行下载
+                                    count = SimpleNamespace(all=1, success=0, fail=0, skip=0)
+                                    data = await xhs.deal_script_tasks(note_card, extract.index, count=count)
+                                    if data:
+                                        data["作品链接"] = url
+                                        msg = "成功 (API模式)"
+                                        api_success = True
+                    
+                    if not api_success:
+                        # 如果 API 模式失败或无 Cookie，回退到 HTML 解析模式
+                        data = await xhs._deal_extract(
+                            url,
+                            extract.download,
+                            extract.index,
+                            not extract.skip,
+                            cookie,
+                            extract.proxy,
+                            extract.work_path,
+                            task_id=extract.task_id
+                        )
+                        msg = "成功 (HTML模式)"
+                except Exception as e:
+                    logger.exception(f"Error in handle_detail for URL: {extract.url}")
+                    msg = f"发生错误: {str(e)}"
+                    data = None
+            return ExtractData(message=msg, params=extract, data=data)
+    except Exception as e:
+        import traceback
+        with open("/tmp/downloader_error.log", "w") as f:
+            f.write(traceback.format_exc())
+        raise e
 
 @router.get("/tasks")
 async def get_tasks(xhs: XHS = Depends(get_xhs)):

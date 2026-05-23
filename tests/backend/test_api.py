@@ -51,6 +51,53 @@ def test_backend_foundation_modules_import():
     assert Task.__tablename__ == "tasks"
 
 
+def test_system_status_exposes_runtime_task_and_account_summary():
+    response = client.get("/api/system/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "runtime" in payload
+    assert "tasks" in payload
+    assert "running_count" in payload["tasks"]
+    assert "accounts" in payload
+    assert "active_count" in payload["accounts"]
+
+
+def test_ops_status_requires_authentication():
+    response = client.get("/api/ops/status")
+    assert response.status_code == 401
+
+
+def test_local_helper_health_and_cookie_read_failure(monkeypatch):
+    from fastapi.testclient import TestClient as LocalTestClient
+
+    from backend.app import local_helper
+
+    helper_client = LocalTestClient(local_helper.app)
+    health = helper_client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["bind"] == "127.0.0.1:8765"
+
+    monkeypatch.setattr(local_helper, "get_xhs_cookies_from_browser", lambda browser_type=None: ("", "not logged in"))
+    failed = helper_client.post("/xhs/cookies/read", json={"browser_type": "auto"})
+    assert failed.status_code == 400
+    assert "未读取到" in failed.json()["detail"]
+
+
+def test_ops_action_disabled_without_system_ops_token(tmp_path):
+    db_dependency = _override_database(tmp_path)
+    try:
+        access_token = _register_and_get_access_token("ops-disabled-user")
+        response = client.post(
+            "/api/ops/actions/restart-service",
+            json={"confirm": True},
+            headers={"Authorization": f"Bearer {access_token}", "X-System-Ops-Token": "wrong"},
+        )
+        assert response.status_code == 403
+        assert "SYSTEM_OPS_TOKEN" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(db_dependency, None)
+
+
 def test_accounts_page_does_not_auto_check_accounts_on_load():
     source = open("frontend/src/pages/platforms/xhs/accounts-page.tsx", encoding="utf-8").read()
 

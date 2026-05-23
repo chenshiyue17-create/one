@@ -179,6 +179,63 @@ python main.py --with-frontend
 
 首次启动自动创建数据库，注册账号即可使用。
 
+### 服务器运营版
+
+生产环境可直接访问：
+
+- Web: http://47.87.68.74/spider-xhs/
+- 健康检查: http://47.87.68.74/spider-xhs/api/health
+- 状态接口: http://47.87.68.74/spider-xhs/api/system/status
+
+服务器默认由 systemd 管理 `one-xhs` 服务，后端直接用 conda 环境启动 Uvicorn，并由后端托管 `frontend/dist`：
+
+```bash
+sudo systemctl status one-xhs --no-pager
+sudo journalctl -u one-xhs -n 200 --no-pager
+curl http://127.0.0.1:8000/api/system/status
+```
+
+部署时需要固定：
+
+```bash
+FRONTEND_SERVE_STATIC=true
+FRONTEND_BUILD_DIR=/home/ecs-assist-user/one/frontend/dist
+VITE_APP_BASE=/spider-xhs/
+```
+
+### 本地登录助手
+
+服务器网页无法直接读取你电脑上的浏览器 Cookie。本项目提供了本地登录助手，用于安全地从本机浏览器同步登录状态。
+
+**注意：** 如果你使用 `./start.sh` 或 `python main.py` 启动项目，**本地助手会自动在后台启动**，无需手动运行。
+
+如果你需要单独运行或在其他机器上运行：
+
+```bash
+chmod +x ./start-local-helper.sh
+./start-local-helper.sh
+```
+
+然后在服务器网页的「账号矩阵」里使用「本地登录同步」卡片：
+
+1. 点击「检测助手」
+2. 点击「读取 Cookie」
+3. 确认账号类型和 Creator 同步选项
+4. 点击「确认同步到服务器」
+
+助手接口只监听 `127.0.0.1:8765`，Cookie 上传必须由用户点击触发，不会后台自动上传。
+
+### 运维中心
+
+访问 `/ops` 可查看服务状态、Nginx 检查、前端构建状态和日志。写操作只允许白名单：
+
+- 重启 `one-xhs`
+- 重载 Nginx
+- 重新构建前端
+- 重新运行部署检查
+
+高危操作必须二次确认，并在页面输入 `SYSTEM_OPS_TOKEN`。未设置 token 时接口返回禁用状态。
+
 ### Docker 部署
 
 ```bash
@@ -231,7 +288,15 @@ scheduler:
   enabled: false                    # 启用定时任务（自动运营/监控/Cookie巡检）
 ```
 
-主要环境变量：`SECRET_KEY`、`DATABASE_TYPE`、`DATABASE_URL`、`SCHEDULER_ENABLED`
+主要环境变量：`SECRET_KEY`、`DATABASE_TYPE`、`DATABASE_URL`、`SCHEDULER_ENABLED`、`SYSTEM_OPS_TOKEN`
+
+### 常见故障
+
+- 页面打不开：先查 `curl http://127.0.0.1:8000/api/health`，再查 `sudo systemctl status one-xhs --no-pager`。
+- `/spider-xhs/` 白屏：确认前端用 `VITE_APP_BASE=/spider-xhs/ npm run build` 构建，且 `frontend/dist/index.html` 存在。
+- 本地登录同步失败：确认本机运行 `./start-local-helper.sh`，浏览器已登录小红书，页面弹出的同步确认已点击。
+- 运维操作 403：确认服务环境变量里配置了 `SYSTEM_OPS_TOKEN`，页面输入值一致。
+- 前端构建失败：查看 `/tmp/xhs-frontend-rebuild.log` 或 `/tmp/xhs-*.log`。
 
 ---
 

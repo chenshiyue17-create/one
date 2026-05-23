@@ -2,6 +2,7 @@ import { HeartOutlined, SafetyCertificateOutlined, WarningOutlined } from "@ant-
 import { Alert, Card, Col, Image, Row, Space, Typography } from "antd";
 
 import { PageHeader } from "../../components/layout/app-shell";
+import { apiUrl } from "../../lib/api";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -57,7 +58,7 @@ export function SettingsPage() {
               <Col>
                 <div style={{ textAlign: "center" }}>
                   <Image
-                    src="/api/files/media/wx_pay.png"
+                    src={apiUrl("/files/media/wx_pay.png")}
                     width={200}
                     fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzFmMWYxZiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOGM4YzhjIiBmb250LXNpemU9IjE0Ij7lvq7kv6HmlK/ku5g8L3RleHQ+PC9zdmc+"
                   />
@@ -67,7 +68,7 @@ export function SettingsPage() {
               <Col>
                 <div style={{ textAlign: "center" }}>
                   <Image
-                    src="/api/files/media/zfb_pay.jpg"
+                    src={apiUrl("/files/media/zfb_pay.jpg")}
                     width={200}
                     fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzFmMWYxZiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOGM4YzhjIiBmb250LXNpemU9IjE0Ij7mlK/ku5jlrp3mlK/ku5g8L3RleHQ+PC9zdmc+"
                   />

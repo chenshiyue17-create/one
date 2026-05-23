@@ -28,13 +28,42 @@ class Converter:
         if not html:
             return ""
         html_tree = HTML(html)
-        scripts = html_tree.xpath(self.INITIAL_STATE)
-        return self.get_script(scripts)
+        # 尝试查找包含 INITIAL_STATE 的 script 标签，或者带有特定 id 的标签
+        scripts = html_tree.xpath("//script/text()")
+        
+        # 优先查找 window.__INITIAL_STATE__
+        for script in reversed(scripts):
+            if "window.__INITIAL_STATE__" in script:
+                return script
+        
+        # 备选：查找 rednote 可能会用的其它标识
+        for script in reversed(scripts):
+            if "initial-state" in script:
+                return script
+                
+        return ""
 
     @classmethod
     def _convert_object(cls, text: str) -> dict:
-        cleaned = cls.YAML_ILLEGAL.sub("", text.lstrip("window.__INITIAL_STATE__="))
-        return safe_load(cleaned)
+        if not text:
+            return {}
+        # 去掉开头的赋值语句
+        if "=" in text:
+            text = text.split("=", 1)[1].strip()
+        # 去掉结尾的分号
+        if text.endswith(";"):
+            text = text[:-1].strip()
+        
+        cleaned = cls.YAML_ILLEGAL.sub("", text)
+        try:
+            return safe_load(cleaned)
+        except Exception:
+            # 如果 YAML 解析失败，尝试 JSON 解析
+            try:
+                import json
+                return json.loads(cleaned)
+            except Exception:
+                return {}
 
     @classmethod
     def _filter_object(cls, data: dict) -> dict:

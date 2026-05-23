@@ -45,6 +45,37 @@ def start_frontend(port: int) -> Optional[subprocess.Popen]:
     return subprocess.Popen(command, cwd=str(frontend_dir))
 
 
+def start_local_helper() -> Optional[subprocess.Popen]:
+    """Start the local login helper on port 8765 if not already running."""
+    port = 8765
+    
+    # Check if already running
+    import httpx
+    try:
+        with httpx.Client(timeout=1.0) as client:
+            resp = client.get(f"http://127.0.0.1:{port}/health")
+            if resp.status_code == 200:
+                print(f"Local helper is already running on port {port}.")
+                return None
+    except Exception:
+        pass
+
+    print(f"Starting local helper at http://127.0.0.1:{port}")
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "backend.app.local_helper:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--log-level",
+        "info",
+    ]
+    return subprocess.Popen(command, cwd=str(ROOT))
+
+
 def kill_process_on_port(port: int) -> None:
     """Find and kill any process listening on the given port."""
     try:
@@ -87,6 +118,25 @@ def open_browser(url: str, delay: float = 1.5) -> None:
     threading.Thread(target=_open, daemon=True).start()
 
 
+def prepare_backend_startup() -> None:
+    """Run the startup work explicitly before Uvicorn starts serving."""
+    from sqlalchemy import select
+
+    from backend.app.core.database import SessionLocal, init_db
+    from backend.app.core.security import hash_password
+    from backend.app.models import User
+    from backend.app.services.crawl_cache_service import purge_expired_cache
+
+    init_db()
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == "admin"))
+        if not user:
+            user = User(username="admin", password_hash=hash_password("password123"))
+            db.add(user)
+            db.commit()
+        purge_expired_cache(db)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
 
@@ -109,6 +159,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.with_frontend:
         kill_process_on_port(args.frontend_port)
 
+    local_helper_process = start_local_helper()
     frontend_process = start_frontend(args.frontend_port) if args.with_frontend else None
 
     # Auto-open browser if frontend is being started
@@ -120,10 +171,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         import uvicorn
 
-        uvicorn.run("backend.app.main:app", host=host, port=port, reload=args.reload)
+        prepare_backend_startup()
+        uvicorn.run("backend.app.main:app", host=host, port=port, reload=args.reload, lifespan="off")
     finally:
         if frontend_process and frontend_process.poll() is None:
             frontend_process.terminate()
+        if local_helper_process and local_helper_process.poll() is None:
+            local_helper_process.terminate()
     return 0
 
 

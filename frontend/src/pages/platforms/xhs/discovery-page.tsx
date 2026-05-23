@@ -158,7 +158,7 @@ export function XhsDiscoveryPage() {
     setDownloadingNoteIds((c) => [...c, note.note_id]);
     try {
       const cookie = localStorage.getItem("xhs_cookie") || "";
-      await downloadXhsNote({ url, cookie });
+      await downloadXhsNote({ url, cookie, account_id: selectedAccountId });
       // 这里可以加个成功的提示
     } catch { setError("下载失败，请检查后端集成。"); } 
     finally { setDownloadingNoteIds((c) => c.filter((id) => id !== note.note_id)); }

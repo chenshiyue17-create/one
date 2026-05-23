@@ -77,8 +77,15 @@ import type {
   XhsQrLoginSession
 } from "../types";
 
-const http = axios.create({
-  baseURL: "/api",
+const appBase = import.meta.env.BASE_URL === "/" ? "" : import.meta.env.BASE_URL.replace(/\/$/, "");
+const LOCAL_HELPER_BASE = "http://127.0.0.1:8765";
+
+export function apiUrl(path: string): string {
+  return `${appBase}/api${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export const http = axios.create({
+  baseURL: apiUrl(""),
   timeout: 120000,
 });
 
@@ -398,7 +405,7 @@ export async function crawlXhsDataStream(
   onError?: (message: string) => void,
 ): Promise<{ total: number; success_count: number; failed_count: number }> {
   const token = getAccessToken();
-  const response = await fetch("/api/xhs/crawl/data", {
+  const response = await fetch(apiUrl("/xhs/crawl/data"), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(payload),
@@ -432,7 +439,7 @@ export async function crawlXhsDataStream(
   return result;
 }
 
-export async function downloadXhsNote(payload: { url: string; cookie?: string; work_path?: string; task_id?: string }): Promise<any> {
+export async function downloadXhsNote(payload: { url: string; cookie?: string; account_id?: number | null; work_path?: string; task_id?: string }): Promise<any> {
   const response = await http.post("/fast-downloader/detail", {
     ...payload,
     download: true
@@ -812,6 +819,60 @@ export async function deleteAccount(accountId: number): Promise<{ id: number; st
   return response.data;
 }
 
+export type LocalHelperHealth = {
+  status: string;
+  service: string;
+  bind: string;
+};
+
+export type LocalCookieReadResult = {
+  ok: boolean;
+  browser_type: string;
+  cookie_count: number;
+  cookie_names: string[];
+  has_required: boolean;
+};
+
+export async function getLocalHelperHealth(): Promise<LocalHelperHealth> {
+  const response = await fetch(`${LOCAL_HELPER_BASE}/health`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function readLocalXhsCookies(payload: {
+  browser_type: "chrome" | "edge" | "firefox" | "safari" | "auto";
+}): Promise<LocalCookieReadResult> {
+  const response = await fetch(`${LOCAL_HELPER_BASE}/xhs/cookies/read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((body as { detail?: string }).detail || `HTTP ${response.status}`);
+  return body as LocalCookieReadResult;
+}
+
+export async function pushLocalXhsCookiesToServer(payload: {
+  browser_type: "chrome" | "edge" | "firefox" | "safari" | "auto";
+  sub_type: "pc" | "creator";
+  sync_creator?: boolean;
+}): Promise<{ ok: boolean; account: PlatformAccount }> {
+  const token = getAccessToken();
+  if (!token) throw new Error("当前网页登录状态已过期，请重新登录。");
+  const response = await fetch(`${LOCAL_HELPER_BASE}/xhs/cookies/push-to-server`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      server_base_url: window.location.origin + appBase,
+      access_token: token,
+      ...payload,
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((body as { detail?: string }).detail || `HTTP ${response.status}`);
+  return body as { ok: boolean; account: PlatformAccount };
+}
+
 export async function createXhsPcQrLoginSession(payload?: {
   sync_creator?: boolean;
 }): Promise<XhsQrLoginSession> {
@@ -826,6 +887,41 @@ export async function createXhsCreatorQrLoginSession(): Promise<XhsQrLoginSessio
 
 export async function pollXhsLoginSession(sessionId: number): Promise<XhsQrLoginSession> {
   const response = await http.get<XhsQrLoginSession>(`/xhs/login-sessions/${sessionId}`);
+  return response.data;
+}
+
+export type OpsStatus = {
+  checked_at: string;
+  ops_enabled: boolean;
+  service: { name: string; active: string; ok: boolean; detail: string };
+  nginx: { ok: boolean; message: string };
+  frontend: { build_dir: string; built: boolean; built_at: string | null };
+  logs: { latest_tmp_deploy_log: string | null; service_log_command: string };
+};
+
+export type OpsLogType = "deploy" | "service" | "nginx";
+
+export async function fetchOpsStatus(): Promise<OpsStatus> {
+  const response = await http.get<OpsStatus>("/ops/status");
+  return response.data;
+}
+
+export async function fetchOpsLogs(type: OpsLogType, tail = 200): Promise<{ type: OpsLogType; source: string; tail: number; content: string }> {
+  const response = await http.get<{ type: OpsLogType; source: string; tail: number; content: string }>("/ops/logs", {
+    params: { type, tail },
+  });
+  return response.data;
+}
+
+export async function runOpsAction(
+  action: "restart-service" | "reload-nginx" | "rebuild-frontend" | "deploy-check",
+  token: string,
+): Promise<{ ok: boolean; stdout: string; stderr: string; action: string; log?: string }> {
+  const response = await http.post<{ ok: boolean; stdout: string; stderr: string; action: string; log?: string }>(
+    `/ops/actions/${action}`,
+    { confirm: true },
+    { headers: { "X-System-Ops-Token": token }, timeout: 240000 },
+  );
   return response.data;
 }
 

@@ -6,6 +6,7 @@ class ExtractParams(BaseModel):
     download: bool = False
     index: list[int] = None
     cookie: str = None
+    account_id: int | None = None
     proxy: str = None
     skip: bool = False
     work_path: str = None

@@ -3,6 +3,7 @@ import {
   CloudDownloadOutlined,
   CommentOutlined,
   DatabaseOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
   HeartOutlined,
   LeftOutlined,
@@ -19,7 +20,7 @@ import {
 import { Alert, Button, Card, Col, Empty, Input, Progress, Row, Select, Space, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
-import { downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsUserNotes, importXhsCookieFromBrowser, saveXhsNotesToLibrary } from "../../../lib/api";
+import { apiUrl, downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsUserNotes, http, importXhsCookieFromBrowser, saveXhsNotesToLibrary } from "../../../lib/api";
 import type { PlatformAccount, XhsSearchNote } from "../../../types";
 
 const { Title, Text } = Typography;
@@ -71,9 +72,8 @@ export function XhsFastDownloadPage() {
     // 进度轮询
     const timer = setInterval(async () => {
       try {
-        const res = await fetch("/api/fast-downloader/tasks");
-        const data = await res.json();
-        setProgressMap(data);
+        const res = await http.get("/fast-downloader/tasks", { _silent: true });
+        setProgressMap(res.data);
       } catch { /* silent */ }
     }, 1000);
     return () => clearInterval(timer);
@@ -145,16 +145,27 @@ export function XhsFastDownloadPage() {
     }
   }
 
+  async function openDownloadFolder() {
+    try {
+      await http.post("/ops/open-folder", { path: "backend/Volume/Download" });
+    } catch {
+      // http interceptor already shows message.error
+    }
+  }
+
   async function processTask(taskId: string, url: string) {
     try {
-      const res = await downloadXhsNote({ url, task_id: taskId });
+      const res = await downloadXhsNote({ url, task_id: taskId, account_id: selectedAccountId });
       if (res.data) {
         setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, ...res.data, status: "completed" } : t));
+        message.success(`下载完成: ${res.data["作品标题"] || "作品"}`);
       } else {
         setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, status: "failed", error: res.message } : t));
+        message.error(`下载失败: ${res.message}`);
       }
     } catch (e) {
       setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, status: "failed", error: "网络请求失败" } : t));
+      message.error("网络请求失败，请检查后端状态");
     }
   }
 
@@ -197,6 +208,7 @@ export function XhsFastDownloadPage() {
         </Col>
         <Col>
           <Space>
+            <Button icon={<FolderOpenOutlined />} onClick={openDownloadFolder}>打开下载目录</Button>
             <Button icon={<GlobalOutlined />} onClick={handleBrowserSync}>同步浏览器登录</Button>
             <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={isLoadingAccounts}>刷新账号</Button>
           </Space>

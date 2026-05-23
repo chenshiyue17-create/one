@@ -45,6 +45,8 @@ def _load_yaml_config() -> Dict[str, Any]:
         "scheduler.interval_seconds": "scheduler_interval_seconds",
         "frontend.serve_static": "frontend_serve_static",
         "frontend.build_dir": "frontend_build_dir",
+        "ops.service_name": "ops_service_name",
+        "ops.system_ops_token": "system_ops_token",
     }
 
     def _flatten(data: Any, prefix: str = "") -> None:
@@ -116,6 +118,10 @@ class Settings(BaseSettings):
     frontend_serve_static: bool = False
     frontend_build_dir: str = "./frontend/dist"
 
+    # Protected server operations
+    ops_service_name: str = "one-xhs"
+    system_ops_token: str = ""
+
     if hasattr(BaseSettings, "model_config"):
         model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -155,4 +161,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     yaml_values = _load_yaml_config()
+    for key in list(yaml_values):
+        if key.upper() in os.environ:
+            yaml_values.pop(key)
     return Settings(**yaml_values)
