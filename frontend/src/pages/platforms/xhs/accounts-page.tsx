@@ -33,7 +33,6 @@ import {
   deleteAccount,
   fetchAccounts,
   getLocalHelperHealth,
-  importXhsCookieFromBrowser,
   pushLocalXhsCookiesToServer,
   readLocalXhsCookies,
   type LocalCookieReadResult,
@@ -73,7 +72,6 @@ export function XhsAccountsPage() {
   const [accounts, setAccounts] = useState<PlatformAccount[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [helperStatus, setHelperStatus] = useState<"unknown" | "online" | "offline">("unknown");
   const [helperMessage, setHelperMessage] = useState("尚未检测");
   const [helperBrowser, setHelperBrowser] = useState<"auto" | "chrome" | "edge" | "firefox" | "safari">("auto");
@@ -94,24 +92,6 @@ export function XhsAccountsPage() {
       setError("账号列表加载失败。");
     } finally {
       setIsLoading(false);
-    }
-  }
-
-  async function handleBrowserSync() {
-    setIsSyncing(true);
-    try {
-      await importXhsCookieFromBrowser({
-        sub_type: "pc",
-        browser_type: "chrome",
-        sync_creator: true
-      });
-      message.success("已从 Chrome 自动同步账号");
-      void loadAccounts();
-    } catch (caught: any) {
-      const detail = caught?.response?.data?.detail;
-      message.error(detail || "未检测到 Chrome 浏览器的小红书登录状态。");
-    } finally {
-      setIsSyncing(false);
     }
   }
 
@@ -250,11 +230,11 @@ export function XhsAccountsPage() {
           <Space>
             <Button
               icon={<ChromeOutlined />}
-              onClick={handleBrowserSync}
-              loading={isSyncing}
+              onClick={handleReadLocalCookie}
+              loading={isHelperBusy}
               style={ { background: "rgba(22, 119, 255, 0.1)", borderColor: "rgba(22, 119, 255, 0.3)" } }
             >
-              一键同步浏览器
+              读取本地登录
             </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
               绑定账号
