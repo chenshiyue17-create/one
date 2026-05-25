@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, HttpUrl
 
 from xhs_utils.browser_cookie import get_xhs_cookies_from_browser
@@ -34,13 +33,29 @@ def _read_cookie(browser_type: str) -> str:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Spider XHS Local Login Helper")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
-    )
+
+    @app.middleware("http")
+    async def allow_private_network(request: Request, call_next):
+        origin = request.headers.get("origin", "*") or "*"
+        req_headers = request.headers.get("access-control-request-headers", "*") or "*"
+
+        if request.method == "OPTIONS":
+            response = Response(status_code=204)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = req_headers
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
+            response.headers["Access-Control-Max-Age"] = "600"
+            return response
+
+        response = await call_next(request)
+        response.headers.setdefault("Access-Control-Allow-Origin", origin)
+        response.headers.setdefault("Vary", "Origin")
+        response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.setdefault("Access-Control-Allow-Headers", req_headers)
+        response.headers.setdefault("Access-Control-Allow-Private-Network", "true")
+        return response
 
     @app.get("/health")
     def health() -> dict[str, str]:
