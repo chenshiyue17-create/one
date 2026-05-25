@@ -257,16 +257,16 @@ class BrowserLoginManager:
             "--disable-blink-features=AutomationControlled",
         ]
         
-        # Use headless=new on Linux for better compatibility
-        headless = "new" if platform.system() == "Linux" else False
-        
-        # On macOS dev, use visible browser
+        # Linux servers typically have no desktop session, so run headless there
+        # and rely on screenshots for QR/captcha relay. Keep macOS visible for local dev.
+        headless = True if platform.system() == "Linux" else False
+
         is_dev = os.environ.get("BROWSER_LOGIN_HEADLESS", "").lower() not in ("1", "true", "yes")
         if is_dev and platform.system() == "Darwin":
             headless = False
 
         session._browser = await session._playwright.chromium.launch(
-            headless=headless if isinstance(headless, bool) else True,
+            headless=headless,
             args=launch_args,
         )
 
