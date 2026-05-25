@@ -72,7 +72,7 @@ export function XhsFastDownloadPage() {
     // 进度轮询
     const timer = setInterval(async () => {
       try {
-        const res = await http.get("/fast-downloader/tasks", { _silent: true });
+        const res = await http.get("/fast-downloader/tasks", { _silent: true } as never);
         setProgressMap(res.data);
       } catch { /* silent */ }
     }, 1000);
