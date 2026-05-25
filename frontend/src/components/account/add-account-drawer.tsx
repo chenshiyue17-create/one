@@ -2,6 +2,7 @@ import { Drawer, Segmented, message } from "antd";
 import { useState } from "react";
 
 import type { PlatformAccount } from "../../types";
+import { BrowserLoginPanel } from "./browser-login-panel";
 import { CookieImportPanel } from "./cookie-import-panel";
 import { PhoneLoginPanel } from "./phone-login-panel";
 import { QrLoginPanel } from "./qr-login-panel";
@@ -13,7 +14,7 @@ type AddAccountDrawerProps = {
 };
 
 type AccountType = "pc" | "creator";
-type LoginMethod = "qr" | "phone" | "cookie";
+type LoginMethod = "qr" | "browser" | "phone" | "cookie";
 
 const accountTypeOptions = [
   { label: "PC", value: "pc" as const },
@@ -22,6 +23,7 @@ const accountTypeOptions = [
 
 const loginMethodOptions = [
   { label: "二维码", value: "qr" as const },
+  { label: "浏览器扫码", value: "browser" as const },
   { label: "手机验证码", value: "phone" as const },
   { label: "Cookie", value: "cookie" as const },
 ];
@@ -76,6 +78,8 @@ export function AddAccountDrawer({ open, onClose, onBound }: AddAccountDrawerPro
 
       {method === "qr" ? (
         <QrLoginPanel accountType={accountType} onConfirmed={handleConfirmed} />
+      ) : method === "browser" ? (
+        <BrowserLoginPanel onConfirmed={handleConfirmed} />
       ) : method === "cookie" ? (
         <CookieImportPanel accountType={accountType} onImported={handleConfirmed} />
       ) : (
