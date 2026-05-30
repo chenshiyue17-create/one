@@ -63,6 +63,7 @@ export type PlatformAccount = {
 export type XhsQrLoginSession = {
   session_id: number;
   status: "pending" | "scanned" | "confirmed" | "expired" | string;
+  status_message?: string;
   qr_url: string;
   qr_image_data_url?: string;
   account?: PlatformAccount | null;

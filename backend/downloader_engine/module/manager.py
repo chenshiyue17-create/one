@@ -80,7 +80,9 @@ class Manager:
         self.root = root
         self.cleaner = cleaner
         self.temp = root.joinpath("Temp")
+        self.work_path = self.__check_path(path)
         self.path = self.__check_path(path)
+        self.folder_name = self.cleaner.filter_name(folder, default="Download")
         self.folder = self.__check_folder(folder)
         self.compatible()
         self.blank_headers = HEADERS | {

@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XHS 本地同步工作台</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
+        background: #111214;
+        color: rgba(255, 255, 255, 0.92);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #111214;
+      }
+
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+      }
+
+      .subtle {
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        margin-top: 24px;
+      }
+
+      .panel {
+        background: #1b1d21;
+        border: 1px solid #2c3138;
+        border-radius: 8px;
+        padding: 18px;
+      }
+
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.72);
+        margin-bottom: 6px;
+      }
+
+      input, select {
+        width: 100%;
+        border: 1px solid #343943;
+        background: #111214;
+        color: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        margin-bottom: 12px;
+      }
+
+      .row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      button, .link-btn {
+        appearance: none;
+        border: 1px solid #3b82f6;
+        background: #2563eb;
+        color: #fff;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+
+      button.secondary, .link-btn.secondary {
+        background: transparent;
+        border-color: #343943;
+        color: rgba(255, 255, 255, 0.88);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        background: rgba(59, 130, 246, 0.12);
+        color: #93c5fd;
+      }
+
+      .status.ok {
+        background: rgba(34, 197, 94, 0.14);
+        color: #86efac;
+      }
+
+      .status.err {
+        background: rgba(239, 68, 68, 0.14);
+        color: #fca5a5;
+      }
+
+      .log {
+        margin-top: 24px;
+        background: #0e1013;
+        border: 1px solid #232830;
+        border-radius: 8px;
+        padding: 14px;
+        min-height: 220px;
+        white-space: pre-wrap;
+        line-height: 1.55;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      .hint {
+        margin-top: 10px;
+        color: rgba(255, 255, 255, 0.52);
+        font-size: 12px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .meta-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid #343943;
+        background: #15171b;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 13px;
+      }
+
+      .meta-pill strong {
+        font-weight: 600;
+      }
+
+      @media (max-width: 720px) {
+        .row { grid-template-columns: 1fr; }
+        .topbar { align-items: flex-start; flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="topbar">
+        <div>
+          <h1>XHS 本地同步工作台</h1>
+          <div class="subtle">本地负责登录授权和 Cookie 读取，服务器只负责保存账号与执行任务。</div>
+          <div class="hint">__LOCAL_WORKBENCH_VERSION__</div>
+          <div class="meta-strip">
+            <div class="meta-pill"><strong>桌面入口</strong><span>__DESKTOP_ENTRY_NAME__</span></div>
+            <div class="meta-pill"><strong>当前项目</strong><span>__PROJECT_LABEL__</span></div>
+            <div class="meta-pill"><strong>项目目录</strong><span>__PROJECT_ROOT__</span></div>
+            <div class="meta-pill"><strong>当前页</strong><span>本地助手页</span></div>
+            <div class="meta-pill"><strong>本地地址</strong><span id="helperOrigin">127.0.0.1</span></div>
+            <div class="meta-pill"><strong>目标服务器</strong><span id="serverTargetMeta">__DEFAULT_SERVER_BASE_URL__</span></div>
+          </div>
+        </div>
+        <div id="helperStatus" class="status">正在检测本地助手...</div>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>1. 登录服务器</h2>
+          <label for="serverBaseUrl">服务器地址</label>
+          <input id="serverBaseUrl" value="__DEFAULT_SERVER_BASE_URL__" />
+
+          <div class="row">
+            <div>
+              <label for="username">用户名</label>
+              <input id="username" value="admin" />
+            </div>
+            <div>
+              <label for="password">密码</label>
+              <input id="password" type="password" value="password123" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="loginBtn">登录服务器</button>
+            <a id="openServerBtn" class="link-btn secondary" href="__SERVER_HOME_URL__" target="_blank" rel="noreferrer">打开服务器页面</a>
+            <a id="openAccountsBtn" class="link-btn secondary" href="__SERVER_ACCOUNTS_URL__" target="_blank" rel="noreferrer">打开账号页</a>
+          </div>
+          <div class="hint">登录成功后，本地会持有服务器访问 token，用于后续账号同步。</div>
+        </section>
+
+        <section class="panel">
+          <h2>2. 读取并同步账号</h2>
+          <div class="row">
+            <div>
+              <label for="browserType">浏览器</label>
+              <select id="browserType">
+                <option value="auto">自动检测</option>
+                <option value="chrome">Chrome</option>
+                <option value="edge">Edge</option>
+                <option value="firefox">Firefox</option>
+                <option value="safari">Safari</option>
+              </select>
+            </div>
+            <div>
+              <label for="subType">账号类型</label>
+              <select id="subType">
+                <option value="pc">PC 账号</option>
+                <option value="creator">Creator</option>
+              </select>
+            </div>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px;">
+            <input id="syncCreator" type="checkbox" checked style="width:auto; margin:0;" />
+            <span>同步 Creator</span>
+          </label>
+
+          <div class="actions">
+            <button id="checkBtn" class="secondary">检测助手</button>
+            <button id="readBtn" class="secondary">读取 Cookie</button>
+            <button id="syncBtn" disabled>同步到服务器</button>
+          </div>
+          <div class="hint">这条链路完全在本地工作台内完成，不再依赖服务器网页访问 127.0.0.1。</div>
+        </section>
+      </div>
+
+      <div class="log" id="logBox">等待操作...</div>
+    </div>
+
+    <script>
+      const helperBase = window.location.origin;
+      const state = {
+        accessToken: window.localStorage.getItem("xhs_local_sync_access_token") || "",
+        refreshToken: window.localStorage.getItem("xhs_local_sync_refresh_token") || "",
+        cookiePreview: null,
+      };
+
+      const helperStatus = document.getElementById("helperStatus");
+      const logBox = document.getElementById("logBox");
+      const helperOrigin = document.getElementById("helperOrigin");
+      const serverTargetMeta = document.getElementById("serverTargetMeta");
+      const loginBtn = document.getElementById("loginBtn");
+      const checkBtn = document.getElementById("checkBtn");
+      const readBtn = document.getElementById("readBtn");
+      const syncBtn = document.getElementById("syncBtn");
+      const openServerBtn = document.getElementById("openServerBtn");
+      const openAccountsBtn = document.getElementById("openAccountsBtn");
+
+      function log(message) {
+        const stamp = new Date().toLocaleTimeString();
+        logBox.textContent = `[${stamp}] ${message}\n` + logBox.textContent;
+      }
+
+      function setHelperBadge(kind, text) {
+        helperStatus.className = `status ${kind}`;
+        helperStatus.textContent = text;
+      }
+
+      function getFormState() {
+        const serverBaseUrl = document.getElementById("serverBaseUrl").value.trim().replace(/\/$/, "");
+        const browserType = document.getElementById("browserType").value;
+        const subType = document.getElementById("subType").value;
+        const syncCreator = document.getElementById("syncCreator").checked;
+        return { serverBaseUrl, browserType, subType, syncCreator };
+      }
+
+      function updateOpenServerLink() {
+        const { serverBaseUrl } = getFormState();
+        openServerBtn.href = `${serverBaseUrl}/`;
+        openAccountsBtn.href = `${serverBaseUrl}/platforms/xhs/accounts`;
+        serverTargetMeta.textContent = serverBaseUrl;
+      }
+
+      async function helperFetch(path, options = {}) {
+        const response = await fetch(`${helperBase}${path}`, options);
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(body.detail || `HTTP ${response.status}`);
+          error.status = response.status;
+          error.body = body;
+          throw error;
+        }
+        return body;
+      }
+
+      async function refreshServerToken() {
+        const { serverBaseUrl } = getFormState();
+        if (!state.refreshToken) {
+          throw new Error("缺少 refresh token，请重新登录服务器。");
+        }
+        const result = await helperFetch("/server/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ server_base_url: serverBaseUrl, refresh_token: state.refreshToken }),
+        });
+        state.accessToken = result.access_token || "";
+        window.localStorage.setItem("xhs_local_sync_access_token", state.accessToken);
+        log("服务器访问令牌已刷新");
+        return state.accessToken;
+      }
+
+      async function detectHelper() {
+        try {
+          const health = await helperFetch("/health", { cache: "no-store" });
+          setHelperBadge("ok", `助手在线 · ${health.bind}`);
+          log(`本地助手在线：${health.service} @ ${health.bind}`);
+        } catch (error) {
+          setHelperBadge("err", "助手离线");
+          log(`本地助手检测失败：${error.message}`);
+        }
+      }
+
+      async function loginServer() {
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        const { serverBaseUrl } = getFormState();
+        loginBtn.disabled = true;
+        try {
+          const result = await helperFetch("/server/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ server_base_url: serverBaseUrl, username, password }),
+          });
+          state.accessToken = result.access_token || "";
+          state.refreshToken = result.refresh_token || "";
+          window.localStorage.setItem("xhs_local_sync_access_token", state.accessToken);
+          window.localStorage.setItem("xhs_local_sync_refresh_token", state.refreshToken);
+          log(`服务器登录成功：${result.user?.username || username}`);
+        } catch (error) {
+          log(`服务器登录失败：${error.message}`);
+          alert(`服务器登录失败：${error.message}`);
+        } finally {
+          loginBtn.disabled = false;
+        }
+      }
+
+      async function readCookies() {
+        const { browserType } = getFormState();
+        readBtn.disabled = true;
+        try {
+          const preview = await helperFetch("/xhs/cookies/read", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ browser_type: browserType }),
+          });
+          state.cookiePreview = preview;
+          syncBtn.disabled = !preview.has_required || !state.accessToken;
+          log(`读取成功：${preview.cookie_count} 个 Cookie；关键 Cookie ${preview.has_required ? "已检测到" : "未检测到"}`);
+        } catch (error) {
+          state.cookiePreview = null;
+          syncBtn.disabled = true;
+          log(`读取 Cookie 失败：${error.message}`);
+          alert(`读取 Cookie 失败：${error.message}`);
+        } finally {
+          readBtn.disabled = false;
+        }
+      }
+
+      async function syncToServer() {
+        if (!state.accessToken) {
+          alert("请先登录服务器。");
+          return;
+        }
+        const { serverBaseUrl, browserType, subType, syncCreator } = getFormState();
+        syncBtn.disabled = true;
+        try {
+          if (state.refreshToken) {
+            try {
+              await refreshServerToken();
+            } catch (error) {
+              log(`刷新令牌失败：${error.message}`);
+            }
+          }
+
+          const pushPayload = () => ({
+            server_base_url: serverBaseUrl,
+            access_token: state.accessToken,
+            browser_type: browserType,
+            sub_type: subType,
+            sync_creator: subType === "pc" ? syncCreator : false,
+          });
+
+          let result;
+          try {
+            result = await helperFetch("/xhs/cookies/push-to-server", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(pushPayload()),
+            });
+          } catch (error) {
+            if ((error.status === 401 || /Invalid authentication token/i.test(error.message || "")) && state.refreshToken) {
+              log("检测到访问令牌过期，正在自动刷新并重试...");
+              await refreshServerToken();
+              result = await helperFetch("/xhs/cookies/push-to-server", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(pushPayload()),
+              });
+            } else {
+              throw error;
+            }
+          }
+          log(`同步成功：账号 ${result.account?.nickname || result.account?.external_user_id || result.account?.id || "unknown"}`);
+          window.open(`${serverBaseUrl}/platforms/xhs/accounts`, "_blank", "noopener,noreferrer");
+        } catch (error) {
+          log(`同步失败：${error.message}`);
+          alert(`同步失败：${error.message}`);
+        } finally {
+          syncBtn.disabled = !state.cookiePreview?.has_required;
+        }
+      }
+
+      document.getElementById("serverBaseUrl").addEventListener("input", updateOpenServerLink);
+      document.getElementById("subType").addEventListener("change", () => {
+        const subType = document.getElementById("subType").value;
+        document.getElementById("syncCreator").disabled = subType !== "pc";
+      });
+      loginBtn.addEventListener("click", loginServer);
+      checkBtn.addEventListener("click", detectHelper);
+      readBtn.addEventListener("click", readCookies);
+      syncBtn.addEventListener("click", syncToServer);
+
+      updateOpenServerLink();
+      helperOrigin.textContent = window.location.origin;
+      detectHelper();
+      if (state.accessToken) {
+        log("已加载本地保存的服务器登录状态。同步前会自动刷新令牌，失效时会提示重新登录。");
+      }
+    </script>
+  </body>
+</html>

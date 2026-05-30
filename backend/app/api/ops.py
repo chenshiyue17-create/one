@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import glob
+import os
+import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -81,6 +84,32 @@ def _require_ops_token(confirm: bool, token: str | None) -> None:
 
 class OpenFolderRequest(BaseModel):
     path: str
+    reveal_file: str | None = None
+
+
+def _open_folder_result(target_path: Path) -> dict[str, Any]:
+    """Open a folder only when the current machine has a real desktop session."""
+    if sys.platform == "darwin":
+        subprocess.run(["open", str(target_path)], check=True)
+        subprocess.run(["osascript", "-e", 'tell application "Finder" to activate'], check=False)
+        return {"ok": True, "opened": True, "path": str(target_path), "message": "已在 Finder 中打开目录"}
+
+    if sys.platform.startswith("win"):
+        os.startfile(str(target_path))
+        return {"ok": True, "opened": True, "path": str(target_path), "message": "已在资源管理器中打开目录"}
+
+    opener = shutil.which("xdg-open")
+    has_desktop = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    if opener and has_desktop:
+        subprocess.run([opener, str(target_path)], check=True)
+        return {"ok": True, "opened": True, "path": str(target_path), "message": "已在文件管理器中打开目录"}
+
+    return {
+        "ok": True,
+        "opened": False,
+        "path": str(target_path),
+        "message": "当前运行环境没有可用的图形文件管理器，请直接使用返回的目录路径。",
+    }
 
 
 @router.post("/open-folder")
@@ -88,7 +117,8 @@ def open_folder(payload: OpenFolderRequest, _: User = Depends(get_current_user))
     """Open a folder in the local file explorer."""
     # 安全性检查：仅允许打开项目内的目录
     project_root = Path(__file__).resolve().parent.parent.parent.parent
-    target_path = (project_root / payload.path).resolve()
+    raw_path = Path(payload.path)
+    target_path = raw_path.resolve() if raw_path.is_absolute() else (project_root / raw_path).resolve()
     
     if not target_path.exists():
         raise HTTPException(status_code=404, detail="目录不存在")
@@ -97,17 +127,21 @@ def open_folder(payload: OpenFolderRequest, _: User = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="禁止访问项目外目录")
 
     try:
-        import platform
-        import os
-        if platform.system() == "Darwin":
-            subprocess.run(["open", str(target_path)])
-        elif platform.system() == "Windows":
-            os.startfile(str(target_path))
-        else:
-            subprocess.run(["xdg-open", str(target_path)])
-        return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        if payload.reveal_file and sys.platform == "darwin":
+            raw_reveal = Path(payload.reveal_file)
+            reveal_path = raw_reveal.resolve() if raw_reveal.is_absolute() else (project_root / raw_reveal).resolve()
+            if not reveal_path.exists():
+                raise HTTPException(status_code=404, detail="文件不存在")
+            if project_root not in reveal_path.parents and reveal_path != project_root:
+                raise HTTPException(status_code=403, detail="禁止访问项目外文件")
+            subprocess.run(["open", "-R", str(reveal_path)], check=True)
+            subprocess.run(["osascript", "-e", 'tell application "Finder" to activate'], check=False)
+            return {"ok": True, "opened": True, "path": str(reveal_path), "message": "已在 Finder 中定位下载文件"}
+        return _open_folder_result(target_path)
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(status_code=500, detail=f"打开目录失败：{exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/status")

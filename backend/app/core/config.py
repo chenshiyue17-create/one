@@ -47,6 +47,8 @@ def _load_yaml_config() -> Dict[str, Any]:
         "frontend.build_dir": "frontend_build_dir",
         "ops.service_name": "ops_service_name",
         "ops.system_ops_token": "system_ops_token",
+        "launcher.default_server_base_url": "launcher_default_server_base_url",
+        "launcher.desktop_entry_name": "launcher_desktop_entry_name",
     }
 
     def _flatten(data: Any, prefix: str = "") -> None:
@@ -121,6 +123,10 @@ class Settings(BaseSettings):
     # Protected server operations
     ops_service_name: str = "one-xhs"
     system_ops_token: str = ""
+
+    # Launcher / local helper defaults
+    launcher_default_server_base_url: str = "http://47.87.68.74/spider-xhs"
+    launcher_desktop_entry_name: str = "XHS工作台.app"
 
     if hasattr(BaseSettings, "model_config"):
         model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

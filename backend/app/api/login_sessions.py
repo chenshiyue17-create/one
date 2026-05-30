@@ -21,6 +21,10 @@ from backend.app.services.account_service import (
     serialize_account,
     upsert_platform_account_from_login,
 )
+from backend.app.services.xhs_browser_login_service import (
+    XhsBrowserLoginManager,
+    get_browser_login_manager,
+)
 
 router = APIRouter(prefix="/xhs/login-sessions", tags=["xhs-login-sessions"])
 
@@ -82,6 +86,10 @@ def get_pc_login_adapter() -> XhsPcLoginAdapter:
 
 def get_creator_login_adapter() -> XhsCreatorLoginAdapter:
     return XhsCreatorLoginAdapter()
+
+
+def get_browser_login_adapter() -> XhsBrowserLoginManager:
+    return get_browser_login_manager()
 
 
 def _mask_phone(phone: str) -> str:
@@ -175,6 +183,43 @@ def pc_qrcode(
     }
 
 
+@router.post("/pc/browser-qrcode")
+def pc_browser_qrcode(
+    payload: PcQrCodeRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    browser_manager: XhsBrowserLoginManager = Depends(get_browser_login_adapter),
+):
+    payload = payload or PcQrCodeRequest()
+    try:
+        browser_state = browser_manager.create_session()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"服务器浏览器二维码生成失败: {exc}",
+        ) from exc
+    session = LoginSession(
+        user_id=current_user.id,
+        platform="xhs",
+        sub_type="pc",
+        login_method="browser_qr",
+        status="pending",
+        qr_id=browser_state.session_key,
+        qr_url=browser_state.qr_url,
+        encrypted_temp_cookies=encrypt_text(_dump_temp_state({}, sync_creator=payload.sync_creator)),
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return {
+        "session_id": session.id,
+        "status": session.status,
+        "qr_url": browser_state.qr_url,
+        "qr_image_data_url": browser_state.qr_image_data_url,
+        "status_message": browser_state.message,
+    }
+
+
 @router.post("/creator/qrcode")
 def creator_qrcode(
     current_user: User = Depends(get_current_user),
@@ -215,6 +260,7 @@ def login_session(
     db: Session = Depends(get_db),
     pc_adapter: XhsPcLoginAdapter = Depends(get_pc_login_adapter),
     creator_adapter: XhsCreatorLoginAdapter = Depends(get_creator_login_adapter),
+    browser_manager: XhsBrowserLoginManager = Depends(get_browser_login_adapter),
 ):
     try:
         session = db.get(LoginSession, session_id)
@@ -226,16 +272,45 @@ def login_session(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported login session")
 
         cookies, sync_creator = _load_temp_state(decrypt_text(session.encrypted_temp_cookies))
-        if session.sub_type == "pc":
+        qr_image_data_url = None
+        if session.login_method == "browser_qr":
+            browser_state = browser_manager.poll_session(session.qr_id)
+            result = {
+                "status": browser_state.status,
+                "message": browser_state.message,
+                "cookies": browser_state.cookies or cookies,
+            }
+            qr_image_data_url = browser_state.qr_image_data_url
+            account_sub_type = "pc"
+            user_info = None
+            if result["status"] == "confirmed":
+                try:
+                    user_info = pc_adapter.get_user_info(result["cookies"])
+                except Exception as exc:
+                    result["status"] = "scanned"
+                    result["message"] = f"浏览器已登录，但获取账号资料失败，请稍后重试（{exc}）"
+        elif session.sub_type == "pc":
             if not session.code:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported login session")
             result = pc_adapter.check_qrcode_status(session.qr_id, session.code, cookies)
             account_sub_type = "pc"
-            user_info = pc_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
+            user_info = None
+            if result["status"] == "confirmed":
+                try:
+                    user_info = pc_adapter.get_user_info(result["cookies"])
+                except Exception as exc:
+                    result["status"] = "scanned"
+                    result["message"] = f"已确认扫码，但获取账号资料失败，请稍后重试（{exc}）"
         else:
             result = creator_adapter.check_qrcode_status(session.qr_id, cookies)
             account_sub_type = "creator"
-            user_info = creator_adapter.get_user_info(result["cookies"]) if result["status"] == "confirmed" else None
+            user_info = None
+            if result["status"] == "confirmed":
+                try:
+                    user_info = creator_adapter.get_user_info(result["cookies"])
+                except Exception as exc:
+                    result["status"] = "scanned"
+                    result["message"] = f"已确认扫码，但获取 Creator 账号资料失败，请稍后重试（{exc}）"
         session.status = result["status"]
         session.encrypted_temp_cookies = encrypt_text(
             _dump_temp_state(result["cookies"], sync_creator=sync_creator)
@@ -265,6 +340,8 @@ def login_session(
             "session_id": session.id,
             "status": session.status,
             "qr_url": session.qr_url,
+            "status_message": result.get("message") or session.status,
+            "qr_image_data_url": qr_image_data_url,
             "account": account_payload,
             "creator_account": creator_account_payload,
         }

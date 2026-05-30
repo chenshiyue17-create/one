@@ -40,3 +40,7 @@ AGENTS.md
 .superpowers
 .pytest_cache
 docx
+backend/Volume/
+logs/
+.chrome-helper-profile/
+.chrome-fast-download-profile/

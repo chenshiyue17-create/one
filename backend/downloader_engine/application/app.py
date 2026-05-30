@@ -272,17 +272,39 @@ class XHS:
         task_id: str = None,
     ):
         name = self.__naming_rules(container)
-        if (u := container["下载地址"]) and download:
-            if await self.skip_download(i := container["作品ID"]):
-                self.logging(_("作品 {0} 存在下载记录，跳过下载").format(i))
+        u = container["下载地址"]
+        expected_root = self.manager.folder.joinpath(
+            container["作者ID"] + "_" + self.CLEANER.filter_name(container["作者昵称"])
+        ) if self.manager.author_archive else self.manager.folder
+        expected_path = self.manager.archive(expected_root, name, self.manager.folder_mode)
+
+        def attach_local_result(path):
+            container["本地下载目录"] = str(path)
+            try:
+                files = sorted(str(item) for item in path.glob("*") if item.is_file()) if path.exists() else []
+            except Exception:
+                files = []
+            container["本地文件列表"] = files
+            container["本地文件数量"] = len(files)
+            container["下载成功"] = len(files) > 0
+
+        if u and download:
+            i = container["作品ID"]
+            has_local_files = expected_path.exists() and any(item.is_file() for item in expected_path.glob("*"))
+
+            if await self.skip_download(i) and has_local_files:
+                self.logging(_("作品 {0} 存在下载记录，且本地文件存在，跳过下载").format(i))
+                attach_local_result(expected_path)
                 count.skip += 1
             else:
+                if await self.skip_download(i) and not has_local_files:
+                    self.logging(_("作品 {0} 存在下载记录，但本地文件缺失，改为重新下载").format(i), WARNING)
                 # 进度回调
                 async def progress_callback(percent):
                     if task_id:
                         self.progress_tasks[task_id] = percent
 
-                __, result = await self.download.run(
+                path, result = await self.download.run(
                     u,
                     container["动图地址"],
                     index,
@@ -294,9 +316,13 @@ class XHS:
                     container["时间戳"],
                     progress_callback,
                 )
+                attach_local_result(path)
+                failures = [item for item in (result or []) if isinstance(item, dict) and not item.get("ok")]
+                container["下载失败详情"] = failures
+                container["下载成功"] = bool(result) and not failures and container["本地文件数量"] > 0
                 if not result:
                     count.skip += 1
-                elif all(result):
+                elif not failures:
                     count.success += 1
                     await self.__add_record(
                         i,
@@ -306,6 +332,12 @@ class XHS:
         elif not u:
             self.logging(_("提取作品文件下载地址失败"), ERROR)
             count.fail += 1
+            container["本地文件数量"] = 0
+            container["下载成功"] = False
+        else:
+            container["本地文件数量"] = 0
+            container["下载成功"] = False
+            container["下载失败详情"] = []
         await self.save_data(container)
 
     @data_cache

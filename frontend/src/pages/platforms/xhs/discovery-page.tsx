@@ -3,6 +3,7 @@ import {
   CloudDownloadOutlined,
   CommentOutlined,
   DatabaseOutlined,
+  FolderOpenOutlined,
   HeartOutlined,
   LeftOutlined,
   LinkOutlined,
@@ -15,11 +16,11 @@ import {
   StarOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Input, Row, Select, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Input, Row, Select, Space, Spin, Tag, Typography, message } from "antd";
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsNoteComments, fetchXhsNoteDetail, fetchXhsUserNotes, saveXhsNotesToLibrary, searchXhsNotes } from "../../../lib/api";
+import { downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsNoteComments, fetchXhsNoteDetail, fetchXhsUserNotes, http, saveXhsNotesToLibrary, searchXhsNotes } from "../../../lib/api";
 import type { NoteComment, PlatformAccount, XhsSearchNote, XhsSearchOptions } from "../../../types";
 
 const { Title, Text, Paragraph } = Typography;
@@ -153,14 +154,38 @@ export function XhsDiscoveryPage() {
     setSelectedNote((c) => c?.note_id === note.note_id ? merged : c); return merged;
   }
 
+  async function openTaskFolder(taskData: any) {
+    const localDir = taskData["本地下载目录"];
+    const localFiles = Array.isArray(taskData["本地文件列表"]) ? taskData["本地文件列表"] : [];
+    if (!localDir) return;
+    try {
+      await http.post("/ops/open-folder", { path: String(localDir), reveal_file: localFiles[0] || null });
+    } catch { /* silent */ }
+  }
+
   async function handleDownloadNote(note: XhsSearchNote) {
+    if (!selectedAccountId) { message.warning("请先选择一个 PC 账号。"); return; }
     const url = getPreviewNoteUrl(note); if (!url) return;
     setDownloadingNoteIds((c) => [...c, note.note_id]);
+    const taskId = "task_" + Math.random().toString(36).substr(2, 9);
     try {
-      const cookie = localStorage.getItem("xhs_cookie") || "";
-      await downloadXhsNote({ url, cookie, account_id: selectedAccountId });
-      // 这里可以加个成功的提示
-    } catch { setError("下载失败，请检查后端集成。"); } 
+      const res = await downloadXhsNote({ url, account_id: selectedAccountId, task_id: taskId });
+      if (res.data?.["下载成功"] && (res.data?.["本地文件数量"] || 0) > 0) {
+        message.success(`下载成功: ${res.data["作品标题"] || note.title || "作品"}`);
+        if (res.data["本地下载目录"]) {
+          void openTaskFolder(res.data);
+        }
+      } else if (res.data) {
+        const firstFailure = Array.isArray(res.data?.["下载失败详情"]) ? res.data["下载失败详情"][0] : null;
+        const failureReason = firstFailure?.error || firstFailure?.source || "未检测到本地下载文件，请检查账号状态";
+        message.error(`下载失败: ${failureReason}`);
+      } else {
+        message.error(`下载失败: ${res.message || "未知错误"}`);
+      }
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail || e?.message || "下载请求发送失败";
+      message.error(`下载失败: ${detail}`);
+    } 
     finally { setDownloadingNoteIds((c) => c.filter((id) => id !== note.note_id)); }
   }
 

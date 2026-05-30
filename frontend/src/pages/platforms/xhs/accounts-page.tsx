@@ -82,6 +82,13 @@ export function XhsAccountsPage() {
   const [checkingAccountIds, setCheckingAccountIds] = useState<Set<number>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
+  function isLocalHelperBlockedByBrowser(caught: unknown): boolean {
+    if (!window.isSecureContext && caught instanceof TypeError) {
+      return true;
+    }
+    return caught instanceof Error && caught.message === "Failed to fetch" && !window.isSecureContext;
+  }
+
   async function loadAccounts() {
     setIsLoading(true);
     setError(null);
@@ -101,9 +108,13 @@ export function XhsAccountsPage() {
       const health = await getLocalHelperHealth();
       setHelperStatus("online");
       setHelperMessage(`${health.service} · ${health.bind}`);
-    } catch {
+    } catch (caught) {
       setHelperStatus("offline");
-      setHelperMessage("未检测到本地登录助手，请先运行 ./start-local-helper.sh");
+      setHelperMessage(
+        isLocalHelperBlockedByBrowser(caught)
+          ? "当前页面为 HTTP，浏览器已拦截访问本机助手。请通过桌面工具重新打开工作台。"
+          : "未检测到本地登录助手，请先运行 ./start-local-helper.sh"
+      );
     } finally {
       setIsHelperBusy(false);
     }
@@ -120,8 +131,14 @@ export function XhsAccountsPage() {
       message.success("已读取本机浏览器 Cookie，请确认后再同步到服务器。");
     } catch (caught: any) {
       setHelperStatus("offline");
-      setHelperMessage(caught?.message || "读取 Cookie 失败");
-      message.error(caught?.message || "读取 Cookie 失败");
+      if (isLocalHelperBlockedByBrowser(caught)) {
+        const blockedMessage = "当前页面为 HTTP，浏览器已拦截访问本机助手。请双击桌面 XHS 工作台.app 后重试。";
+        setHelperMessage(blockedMessage);
+        message.error(blockedMessage);
+      } else {
+        setHelperMessage(caught?.message || "读取 Cookie 失败");
+        message.error(caught?.message || "读取 Cookie 失败");
+      }
     } finally {
       setIsHelperBusy(false);
     }
@@ -130,7 +147,7 @@ export function XhsAccountsPage() {
   function handlePushLocalCookie() {
     Modal.confirm({
       title: "确认同步本机登录授权",
-      content: "本操作会把当前浏览器的小红书 Cookie 上传到服务器账号库，用于后续抓取/运营任务。不会绕过登录、验证码或风控。",
+      content: "本操作会把当前浏览器的小红书 Cookie 上传到服务器账号库，用于后续抓取和运营任务。不会绕过登录、验证码或风控。",
       okText: "确认同步",
       cancelText: "取消",
       onOk: async () => {
@@ -245,7 +262,11 @@ export function XhsAccountsPage() {
 
       <Card
         title={<span style={{ color: "rgba(255,255,255,0.88)", fontWeight: 600 }}>本地登录同步</span>}
-        extra={<Tag color={helperStatus === "online" ? "success" : helperStatus === "offline" ? "error" : "default"}>{helperStatus === "online" ? "助手在线" : helperStatus === "offline" ? "助手离线" : "未检测"}</Tag>}
+        extra={
+          <Tag color={helperStatus === "online" ? "success" : helperStatus === "offline" ? "error" : "default"}>
+            {helperStatus === "online" ? "助手在线" : helperStatus === "offline" ? "助手离线" : "未检测"}
+          </Tag>
+        }
         style={{ background: "#1f1f1f", borderColor: "#303030", marginBottom: 16 }}
         styles={{ body: { padding: 20 } }}
       >

@@ -216,12 +216,29 @@ chmod +x ./start-local-helper.sh
 ./start-local-helper.sh
 ```
 
-然后在服务器网页的「账号矩阵」里使用「本地登录同步」卡片：
+在 macOS 上也可以直接双击：
 
-1. 点击「检测助手」
-2. 点击「读取 Cookie」
-3. 确认账号类型和 Creator 同步选项
-4. 点击「确认同步到服务器」
+```bash
+./打开小红书工作台.command
+```
+
+它会先检查并拉起本地登录助手，确认 `127.0.0.1:8765/health` 成功后，再自动打开本地同步工作台：`http://127.0.0.1:8765/`。
+
+当前唯一桌面入口：
+
+- `~/Desktop/XHS工作台.app`
+
+该入口统一指向 `/Users/cc/XHS_ALL_IN_ONE`，启动后会自动拉起本地助手并打开当前正确工作台。旧的 `.command` / `.app` 入口会自动归档到 `~/Desktop/_XHS旧入口归档`，避免版本混乱。
+
+推荐使用新的本地闭环：
+
+1. 在本地工作台里登录服务器账号
+2. 点击「检测助手」
+3. 点击「读取 Cookie」
+4. 点击「同步到服务器」
+5. 自动跳转服务器账号页查看结果
+
+这样本地授权和 Cookie 读取都在 `127.0.0.1` 页面内完成，不再依赖服务器网页直接访问本机回环地址。
 
 助手接口只监听 `127.0.0.1:8765`，Cookie 上传必须由用户点击触发，不会后台自动上传。
 
@@ -294,7 +311,21 @@ scheduler:
 
 - 页面打不开：先查 `curl http://127.0.0.1:8000/api/health`，再查 `sudo systemctl status one-xhs --no-pager`。
 - `/spider-xhs/` 白屏：确认前端用 `VITE_APP_BASE=/spider-xhs/ npm run build` 构建，且 `frontend/dist/index.html` 存在。
-- 本地登录同步失败：确认本机运行 `./start-local-helper.sh`，浏览器已登录小红书，页面弹出的同步确认已点击。
+- 本地登录同步失败：优先使用 `./start-unified-workbench.sh`、`./打开小红书工作台.command` 或桌面 `XHS工作台.app` 打开本地工作台；确认浏览器已登录小红书，再执行读取和同步。
+
+### 单入口整理
+
+如需手动重建桌面唯一入口：
+
+```bash
+./start-unified-workbench.sh
+```
+
+它会执行三件事：
+
+1. 归档旧的 XHS 桌面启动器
+2. 重建唯一桌面入口 `XHS工作台.app`
+3. 自动打开当前正确的本地工作台页面
 - 运维操作 403：确认服务环境变量里配置了 `SYSTEM_OPS_TOKEN`，页面输入值一致。
 - 前端构建失败：查看 `/tmp/xhs-frontend-rebuild.log` 或 `/tmp/xhs-*.log`。
 

@@ -20,7 +20,7 @@ import {
 import { Alert, Button, Card, Col, Empty, Input, Progress, Row, Select, Space, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
-import { apiUrl, downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsUserNotes, http, importXhsCookieFromBrowser, saveXhsNotesToLibrary } from "../../../lib/api";
+import { apiUrl, downloadXhsNote, fetchAccounts, fetchSavedNoteIds, fetchXhsUserNotes, http, saveXhsNotesToLibrary } from "../../../lib/api";
 import type { PlatformAccount, XhsSearchNote } from "../../../types";
 
 const { Title, Text } = Typography;
@@ -36,7 +36,7 @@ export function XhsFastDownloadPage() {
   const [urlInput, setUrlInput] = useState("");
   const [bloggerUrl, setBloggerUrl] = useState("");
   const [isCrawlingBlogger, setIsCrawlingBlogger] = useState(false);
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<Array<Record<string, any>>>([]);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [savedNoteIds, setSavedNoteIds] = useState<string[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
@@ -68,7 +68,7 @@ export function XhsFastDownloadPage() {
   useEffect(() => {
     void loadAccounts();
     void loadSavedNoteIds();
-    
+
     // 进度轮询
     const timer = setInterval(async () => {
       try {
@@ -78,16 +78,6 @@ export function XhsFastDownloadPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-
-  async function handleBrowserSync() {
-    try {
-      await importXhsCookieFromBrowser({ sub_type: "pc", browser_type: "auto", sync_creator: true });
-      message.success("已成功从本地浏览器同步登录状态");
-      void loadAccounts();
-    } catch (e: any) {
-      message.error("同步失败: " + (e.response?.data?.detail || "未知错误"));
-    }
-  }
 
   async function handleBloggerCrawl() {
     if (!selectedAccountId) { message.warning("请先选择一个账号"); return; }
@@ -130,6 +120,10 @@ export function XhsFastDownloadPage() {
   }
 
   async function handleFastDownload() {
+    if (!selectedAccountId) {
+      message.warning("请先绑定并选择一个 PC 账号");
+      return;
+    }
     const urls = urlInput.match(/https?:\/\/[^\s]+/g);
     if (!urls) {
       message.warning("请输入有效的小红书链接");
@@ -147,25 +141,66 @@ export function XhsFastDownloadPage() {
 
   async function openDownloadFolder() {
     try {
-      await http.post("/ops/open-folder", { path: "backend/Volume/Download" });
+      const res = await http.post("/ops/open-folder", { path: "backend/Volume/Download" });
+      const data = res.data as { opened?: boolean; path?: string; message?: string };
+      if (data?.opened) {
+        message.success(data.message || "已打开下载目录");
+      } else {
+        message.info(data?.message || data?.path || "已返回下载目录路径");
+      }
     } catch {
       // http interceptor already shows message.error
+    }
+  }
+
+  async function openTaskFolder(task: Record<string, any>) {
+    const localDir = task["本地下载目录"];
+    const localFiles = Array.isArray(task["本地文件列表"]) ? task["本地文件列表"] : [];
+    if (!localDir) {
+      message.info("当前任务还没有返回实际下载目录");
+      return;
+    }
+    try {
+      const normalized = String(localDir);
+      const res = await http.post("/ops/open-folder", { path: normalized, reveal_file: localFiles[0] || null });
+      const data = res.data as { opened?: boolean; path?: string; message?: string };
+      if (data?.opened) {
+        message.success(data.message || "已打开本次下载目录");
+      } else {
+        await navigator.clipboard.writeText(normalized).catch(() => undefined);
+        message.info((data?.message || data?.path || "已返回本次下载目录路径") + "，目录已复制到剪贴板");
+      }
+    } catch {
+      await navigator.clipboard.writeText(String(localDir)).catch(() => undefined);
+      message.warning(`自动打开失败，目录已复制到剪贴板：${localDir}`);
     }
   }
 
   async function processTask(taskId: string, url: string) {
     try {
       const res = await downloadXhsNote({ url, task_id: taskId, account_id: selectedAccountId });
-      if (res.data) {
-        setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, ...res.data, status: "completed" } : t));
-        message.success(`下载完成: ${res.data["作品标题"] || "作品"}`);
+      if (res.data?.["下载成功"] && (res.data?.["本地文件数量"] || 0) > 0) {
+        const completedTask = { ...res.data, id: taskId, status: "completed" };
+        setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, ...completedTask } : t));
+        const assetLabel = res.data["作品类型"] === "视频" ? "视频" : "图片";
+        message.success(`${assetLabel}已就绪: ${res.data["作品标题"] || "作品"}`);
+        if (res.data["本地下载目录"]) {
+          void openTaskFolder(completedTask);
+        }
+      } else if (res.data) {
+        const firstFailure = Array.isArray(res.data?.["下载失败详情"]) ? res.data["下载失败详情"][0] : null;
+        const failureReason = firstFailure?.error || firstFailure?.source || "未检测到本地下载文件，请检查账号权限或原链接资源";
+        const errorMessage = `下载失败：${failureReason}`;
+        setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, ...res.data, status: "failed", error: errorMessage } : t));
+        message.error(errorMessage);
       } else {
         setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, status: "failed", error: res.message } : t));
         message.error(`下载失败: ${res.message}`);
       }
-    } catch (e) {
-      setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, status: "failed", error: "网络请求失败" } : t));
-      message.error("网络请求失败，请检查后端状态");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail || e?.response?.data?.message || e?.message || "网络请求失败";
+      setTasks((prev) => prev.map(t => t.id === taskId ? { ...t, status: "failed", error: detail } : t));
+      message.error(`下载失败: ${detail}`);
     }
   }
 
@@ -209,11 +244,20 @@ export function XhsFastDownloadPage() {
         <Col>
           <Space>
             <Button icon={<FolderOpenOutlined />} onClick={openDownloadFolder}>打开下载目录</Button>
-            <Button icon={<GlobalOutlined />} onClick={handleBrowserSync}>同步浏览器登录</Button>
             <Button icon={<ReloadOutlined />} onClick={loadAccounts} loading={isLoadingAccounts}>刷新账号</Button>
           </Space>
         </Col>
       </Row>
+
+      {pcAccounts.length === 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="当前没有可用的 PC 下载账号"
+          description="请先在账号矩阵中绑定并确认一个可用的 PC 账号，再回来使用快速下载。"
+        />
+      ) : null}
 
       <Card style={{ marginBottom: 24, background: "#141414" }}>
         <div style={{ marginBottom: 12 }}>
@@ -310,9 +354,15 @@ export function XhsFastDownloadPage() {
                       <Button size="small" ghost type="primary" icon={<DatabaseOutlined />} disabled={savedNoteIds.includes(task["作品ID"]) || !task["作品ID"]} onClick={() => handleSaveToLibrary(task)}>
                         {savedNoteIds.includes(task["作品ID"]) ? "已存库" : "保存到内容库"}
                       </Button>
+                      <Button size="small" icon={<FolderOpenOutlined />} disabled={!task["本地下载目录"]} onClick={() => openTaskFolder(task)}>打开本次目录</Button>
                       <Button size="small" icon={<LinkOutlined />} href={task["作品链接"] || task.url} target="_blank">查看原文</Button>
                       {task.error && <Text type="danger" style={{ fontSize: 12 }}>错误: {task.error}</Text>}
                     </Space>
+                    {task["本地下载目录"] ? (
+                      <div style={{ marginTop: 8 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>保存位置：{task["本地下载目录"]}</Text>
+                      </div>
+                    ) : null}
                   </Col>
                 </Row>
               </Card>

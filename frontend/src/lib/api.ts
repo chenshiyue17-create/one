@@ -876,7 +876,7 @@ export async function pushLocalXhsCookiesToServer(payload: {
 export async function createXhsPcQrLoginSession(payload?: {
   sync_creator?: boolean;
 }): Promise<XhsQrLoginSession> {
-  const response = await http.post<XhsQrLoginSession>("/xhs/login-sessions/pc/qrcode", payload ?? {});
+  const response = await http.post<XhsQrLoginSession>("/xhs/login-sessions/pc/browser-qrcode", payload ?? {});
   return response.data;
 }
 

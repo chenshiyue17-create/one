@@ -26,6 +26,14 @@ from xhs_utils.xhs_util import generate_headers, splice_str
 from xhs_utils.common_util import generate_a1, generate_web_id, fetch_sec_cookies, fetch_gid
 
 
+def _compact_status(value):
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        text = str(value)
+    return text[:500]
+
+
 class XHSLoginApi:
     def __init__(self):
         self.base_url = "https://edith.xiaohongshu.com"
@@ -121,6 +129,8 @@ class XHSLoginApi:
             )
             for key, value in resp.cookies.items():
                 cookies[key] = value
+            if cookies.get('web_session'):
+                return True, '验证成功', cookies
             
             res = resp.json()
             if not res.get('success'):
@@ -130,19 +140,49 @@ class XHSLoginApi:
                     return False, '二维码已过期', cookies
                 return False, msg, cookies
 
-            data = res.get('data', {})
-            login_info = data.get('login_info')
+            data = res.get('data', {}) or {}
+            login_info = data.get('login_info') or data.get('loginInfo')
             
             if login_info:
                 # Login confirmed
-                if 'session' in login_info:
-                    cookies['web_session'] = login_info['session']
+                if isinstance(login_info, dict):
+                    session_value = (
+                        login_info.get('session')
+                        or login_info.get('web_session')
+                        or login_info.get('webSession')
+                        or login_info.get('access_token')
+                    )
+                    if session_value:
+                        cookies['web_session'] = session_value
                 return True, '验证成功', cookies
+
+            status_value = (
+                data.get('status')
+                or data.get('code_status')
+                or data.get('codeStatus')
+                or data.get('qr_status')
+                or data.get('qrStatus')
+                or data.get('scan_status')
+                or data.get('scanStatus')
+            )
+            status_text = _compact_status(data)
+            normalized_status = str(status_value).lower() if status_value is not None else ""
+            normalized_data = status_text.lower()
+            if normalized_status in {"confirmed", "success", "login_success"} and cookies.get('web_session'):
+                return True, '验证成功', cookies
+            if normalized_status in {"1", "2", "3", "scanned", "confirm", "waiting_confirm", "wait_confirm"}:
+                return False, f'已扫码，请在手机端确认登录（{status_text}）', cookies
+            if normalized_status in {"-1", "expired", "timeout"}:
+                return False, '二维码已过期', cookies
+            if any(keyword in normalized_data for keyword in ["confirm", "scanned", "已扫码", "已扫描", "待确认", "确认登录"]):
+                return False, f'已扫码，请在手机端确认登录（{status_text}）', cookies
+            if any(keyword in normalized_data for keyword in ["expired", "过期"]):
+                return False, '二维码已过期', cookies
             
             # Check for intermediate statuses if not confirmed
             # Note: XHS might not always return a clear status if not confirmed
             # We assume it's pending if login_info is missing but success is True
-            return False, '请扫描二维码', cookies
+            return False, f'请扫描二维码（{status_text}）', cookies
 
         except Exception as e:
             logger.error(f"Check QR code status failed: {e}")

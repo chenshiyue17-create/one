@@ -57,6 +57,12 @@ scheduler:
 
 frontend:
   # Set to true to serve pre-built frontend from backend (Docker/production)
-  serve_static: false
+  serve_static: true
   # Path to the built frontend assets
   build_dir: "./frontend/dist"
+
+launcher:
+  # Canonical server base URL used by the local helper workbench
+  default_server_base_url: "http://127.0.0.1:8000"
+  # Canonical desktop entry name shown in UI/logs
+  desktop_entry_name: "XHS工作台.app"

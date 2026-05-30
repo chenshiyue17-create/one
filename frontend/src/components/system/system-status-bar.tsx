@@ -2,6 +2,7 @@ import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined, ReloadOutlin
 import { Button, Space, Tag, Tooltip, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { formatBuildLabel, getBuildSha, getBuildTime, getProjectName, getRuntimeOriginLabel, getRuntimeOriginValue } from "../../lib/build-info";
 import { apiUrl } from "../../lib/api";
 
 const { Text } = Typography;
@@ -135,8 +136,27 @@ export function SystemStatusBar() {
     }
   }, [status.runtime?.frontend_built_at]);
 
+  const runtimeOriginLabel = getRuntimeOriginLabel();
+  const runtimeOriginValue = getRuntimeOriginValue();
+  const projectName = getProjectName();
+  const buildSha = getBuildSha();
+  const buildTime = useMemo(() => {
+    try {
+      return new Date(getBuildTime()).toLocaleString("zh-CN", { hour12: false });
+    } catch {
+      return getBuildTime();
+    }
+  }, []);
+
   const detail = (
     <div className="system-status-detail">
+      <div className="system-status-runtime">
+        <Text strong>当前页面来源</Text>
+        <Text type="secondary">当前项目：{projectName}</Text>
+        <Text type="secondary">{runtimeOriginLabel} · {runtimeOriginValue}</Text>
+        <Text type="secondary">构建版本：{buildSha}</Text>
+        <Text type="secondary">构建时间：{buildTime}</Text>
+      </div>
       {status.runtime ? (
         <div className="system-status-runtime">
           <Text type="secondary">PID：{status.runtime.pid}</Text>
@@ -174,8 +194,13 @@ export function SystemStatusBar() {
         </Tag>
       </Tooltip>
       <Space size={6}>
+        <Tag className="system-origin-tag" color={runtimeOriginLabel === "本地页面" ? "blue" : "gold"}>
+          {runtimeOriginLabel}
+        </Tag>
+        <Text type="secondary" className="system-status-runtime-mini">项目 {projectName}</Text>
         {status.runtime ? <Text type="secondary" className="system-status-runtime-mini">PID {status.runtime.pid}</Text> : null}
         <Text type="secondary" className="system-status-runtime-mini">任务 {status.tasks?.running_count ?? 0}</Text>
+        <Text type="secondary" className="system-status-runtime-mini system-build-label">{formatBuildLabel()}</Text>
         <Text type="secondary" className="system-status-time">{checkedAt}</Text>
         <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => void loadStatus()} />
       </Space>

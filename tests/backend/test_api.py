@@ -83,6 +83,191 @@ def test_local_helper_health_and_cookie_read_failure(monkeypatch):
     assert "未读取到" in failed.json()["detail"]
 
 
+def test_local_helper_serves_workbench_and_supports_server_login(monkeypatch):
+    from fastapi.testclient import TestClient as LocalTestClient
+
+    from backend.app import local_helper
+
+    helper_client = LocalTestClient(local_helper.app)
+
+    workbench = helper_client.get("/")
+    assert workbench.status_code == 200
+    assert "XHS 本地同步工作台" in workbench.text
+    assert "当前页" in workbench.text
+    assert "目标服务器" in workbench.text
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "access-token-123",
+                "refresh_token": "refresh-token-123",
+                "token_type": "bearer",
+                "user": {"id": 1, "username": "admin"},
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json):
+            assert url == "http://server.test/spider-xhs/api/auth/login"
+            assert json == {"username": "admin", "password": "password123"}
+            return FakeResponse()
+
+    monkeypatch.setattr(local_helper.httpx, "AsyncClient", FakeAsyncClient)
+    login = helper_client.post(
+        "/server/login",
+        json={
+            "server_base_url": "http://server.test/spider-xhs",
+            "username": "admin",
+            "password": "password123",
+        },
+    )
+    assert login.status_code == 200
+    payload = login.json()
+    assert payload["ok"] is True
+    assert payload["access_token"] == "access-token-123"
+    assert payload["user"]["username"] == "admin"
+
+
+def test_local_helper_meta_and_refresh(monkeypatch):
+    from fastapi.testclient import TestClient as LocalTestClient
+
+    from backend.app import local_helper
+
+    helper_client = LocalTestClient(local_helper.app)
+
+    meta = helper_client.get("/meta")
+    assert meta.status_code == 200
+    payload = meta.json()
+    assert payload["project_label"] == "XHS_ALL_IN_ONE"
+    assert payload["desktop_entry_name"] == "XHS工作台.app"
+    assert payload["server_base_url"].endswith("/spider-xhs")
+    assert payload["build_label"].startswith("版本 ")
+
+    class FakeRefreshResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "refreshed-access-token",
+                "token_type": "bearer",
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json):
+            assert url == "http://server.test/spider-xhs/api/auth/refresh"
+            assert json == {"refresh_token": "refresh-token-123"}
+            return FakeRefreshResponse()
+
+    monkeypatch.setattr(local_helper.httpx, "AsyncClient", FakeAsyncClient)
+    refreshed = helper_client.post(
+        "/server/refresh",
+        json={
+            "server_base_url": "http://server.test/spider-xhs",
+            "refresh_token": "refresh-token-123",
+        },
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json()["access_token"] == "refreshed-access-token"
+
+
+def test_launch_script_forces_current_helper_version():
+    source = open("launch-server-workbench.sh", encoding="utf-8").read()
+
+    assert "stop_helper()" in source
+    assert 'lsof -ti:8765' in source
+    assert 'start_helper' in source
+
+
+def test_frontend_build_info_shows_project_and_version():
+    build_info_source = open("frontend/src/lib/build-info.ts", encoding="utf-8").read()
+    status_bar_source = open("frontend/src/components/system/system-status-bar.tsx", encoding="utf-8").read()
+
+    assert "VITE_PROJECT_NAME" in build_info_source
+    assert "当前项目：" in status_bar_source
+    assert "项目 {projectName}" in status_bar_source
+
+
+def test_launcher_scripts_load_env_configuration():
+    start_source = open("start-unified-workbench.sh", encoding="utf-8").read()
+    launch_source = open("launch-server-workbench.sh", encoding="utf-8").read()
+    env_source = open(".env", encoding="utf-8").read()
+
+    assert 'source "$BASE_DIR/.env"' in start_source
+    assert 'source "$BASE_DIR/.env"' in launch_source
+    assert 'LAUNCHER_DESKTOP_ENTRY_NAME=XHS工作台.app' in env_source
+    assert 'LAUNCHER_DEFAULT_SERVER_BASE_URL=http://47.87.68.74/spider-xhs' in env_source
+
+
+def test_launcher_opens_main_app_and_checks_health():
+    launch_source = open("launch-server-workbench.sh", encoding="utf-8").read()
+
+    assert 'APP_HEALTH_URL="http://127.0.0.1:8000/api/health"' in launch_source
+    assert 'APP_URL="http://127.0.0.1:5173/platforms/xhs/fast-download"' in launch_source
+    assert 'start_main_app()' in launch_source
+    assert 'tell application "Terminal"' in launch_source
+    assert 'tell application "Google Chrome"' in launch_source
+    assert 'close w' in launch_source
+    assert 'stop_main_app()' in launch_source
+    assert 'lsof -ti:8000 -ti:5173' in launch_source
+    assert 'if app_ready && helper_ready;' in launch_source
+
+
+def test_background_main_launcher_detaches_processes():
+    source = open("start-main-background.sh", encoding="utf-8").read()
+
+    assert 'uvicorn backend.app.main:app' in source
+    assert 'npm --prefix "$BASE_DIR/frontend" run dev' in source
+    assert 'BACKEND_PID_FILE' in source
+
+
+def test_fast_download_page_shows_local_download_directory():
+    source = open("frontend/src/pages/platforms/xhs/fast-download-page.tsx", encoding="utf-8").read()
+    downloader_source = open("backend/downloader_engine/application/app.py", encoding="utf-8").read()
+    download_source = open("backend/downloader_engine/application/download.py", encoding="utf-8").read()
+    downloader_api_source = open("backend/app/api/downloader.py", encoding="utf-8").read()
+    ops_source = open("backend/app/api/ops.py", encoding="utf-8").read()
+
+    assert '本地下载目录' in source
+    assert '本地文件列表' in source
+    assert '打开本次目录' in source
+    assert 'void openTaskFolder(completedTask);' in source
+    assert 'navigator.clipboard.writeText' in source
+    assert '下载失败详情' in source
+    assert '下载成功' in source
+    assert '作品类型"] === "视频" ? "视频" : "图片"' in source
+    assert 'raw_path.is_absolute()' in ops_source
+    assert 'reveal_file' in ops_source
+    assert 'container["下载成功"] = bool(result) and not failures and container["本地文件数量"] > 0' in downloader_source
+    assert 'container["下载失败详情"] = failures' in downloader_source
+    assert 'container["本地下载目录"] = str(path)' in downloader_source
+    assert '存在下载记录，但本地文件缺失，改为重新下载' in downloader_source
+    assert 'attach_local_result(expected_path)' in downloader_source
+    assert 'return {"ok": False' in download_source
+    assert 'data["本地文件数量"] = len(files)' in downloader_api_source
+    assert 'data["下载成功"] = len(files) > 0' in downloader_api_source
+    assert '_extract_fallback_image_urls' in downloader_api_source
+    assert 'note_card["imageList"] = [{"urlDefault": url} for url in fallback_images]' in downloader_api_source
+
+
 def test_ops_action_disabled_without_system_ops_token(tmp_path):
     db_dependency = _override_database(tmp_path)
     try:

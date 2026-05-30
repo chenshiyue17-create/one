@@ -102,13 +102,14 @@ body {
 
 .system-status-bar {
   position: fixed;
-  top: 10px;
+  top: 12px;
   right: 16px;
   z-index: 2000;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 8px;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 8px 6px 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(20, 20, 20, 0.86);
@@ -127,6 +128,18 @@ body {
 
 .system-status-runtime-mini {
   font-size: 12px;
+}
+
+.system-build-label {
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.system-origin-tag {
+  margin-inline-end: 0;
+  font-weight: 600;
 }
 
 .system-status-detail {
@@ -185,4 +198,17 @@ body {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+  .system-status-bar {
+    left: 16px;
+    right: 16px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .system-build-label {
+    max-width: 220px;
+  }
 }

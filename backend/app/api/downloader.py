@@ -33,6 +33,52 @@ from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
 from backend.app.models import User
 from backend.app.api.platforms.xhs.pc import _get_owned_pc_account_cookies
+from backend.app.api.platforms.xhs.pc import _proxy_image_url, _proxy_image_urls
+
+def _proxy_downloader_data(data: dict | None) -> dict | None:
+    """Rewrite CDN URLs in downloader extract data to use local proxy."""
+    if not data:
+        return data
+    for key in ("封面地址", "cover_url"):
+        if data.get(key):
+            data[key] = _proxy_image_url(str(data[key]))
+    downloads = data.get("下载地址", [])
+    if isinstance(downloads, list):
+        data["下载地址"] = _proxy_image_urls(downloads)
+    elif isinstance(downloads, str):
+        data["下载地址"] = _proxy_image_url(downloads)
+    local_dir = data.get("本地下载目录")
+    if isinstance(local_dir, str) and local_dir:
+        from pathlib import Path
+        local_path = Path(local_dir)
+        files = sorted(str(item) for item in local_path.glob("*") if item.is_file()) if local_path.exists() else []
+        data["本地下载目录"] = str(local_path)
+        data["本地文件列表"] = files
+        data["本地文件数量"] = len(files)
+        data["下载成功"] = len(files) > 0
+    return data
+
+
+def _extract_fallback_image_urls(note_card: dict) -> list[str]:
+    urls: list[str] = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                lower = str(key).lower()
+                if lower in {"url", "urldefault", "url_default", "originimageurl", "origin_image_url"} and isinstance(item, str):
+                    if any(host in item for host in ("xhscdn.com", "xiaohongshu.com")) and item not in urls:
+                        urls.append(item)
+                else:
+                    walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(note_card)
+    filtered = [item for item in urls if not item.endswith(".mp4") and "sns-video" not in item]
+    return filtered
+
 from loguru import logger
 
 @router.post("/detail", response_model=ExtractData)
@@ -74,6 +120,10 @@ async def handle_detail(
                             if items:
                                 note_card = items[0].get("note_card") or items[0].get("note")
                                 if note_card:
+                                    if not note_card.get("imageList") and not note_card.get("image_list"):
+                                        fallback_images = _extract_fallback_image_urls(note_card)
+                                        if fallback_images:
+                                            note_card["imageList"] = [{"urlDefault": url} for url in fallback_images]
                                     # 使用 downloader_engine 的处理逻辑进行下载
                                     count = SimpleNamespace(all=1, success=0, fail=0, skip=0)
                                     data = await xhs.deal_script_tasks(note_card, extract.index, count=count)
@@ -99,6 +149,7 @@ async def handle_detail(
                     logger.exception(f"Error in handle_detail for URL: {extract.url}")
                     msg = f"发生错误: {str(e)}"
                     data = None
+            data = _proxy_downloader_data(data)
             return ExtractData(message=msg, params=extract, data=data)
     except Exception as e:
         import traceback

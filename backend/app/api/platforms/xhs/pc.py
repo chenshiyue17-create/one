@@ -76,6 +76,23 @@ def _metric(value: Any) -> int:
     return int(float(number_match.group(0)) * multiplier)
 
 
+
+
+def _proxy_image_url(url: str) -> str:
+    """Rewrite xhscdn CDN URLs to use local proxy for hotlink prevention."""
+    if not url:
+        return url
+    if url.startswith(("https://sns-img-", "https://ci.xiaohongshu.com", "https://sns-video-")):
+        from urllib.parse import quote
+        return f"/api/files/proxy/image?url={quote(url)}"
+    return url
+
+
+def _proxy_image_urls(urls: list[str]) -> list[str]:
+    """Rewrite a list of image URLs."""
+    return [_proxy_image_url(u) for u in urls]
+
+
 def _first_url(value: Any) -> str:
     if isinstance(value, str):
         return value
@@ -230,9 +247,9 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "content": card.get("desc") or card.get("content") or "",
         "author_id": author.get("user_id") or author.get("id") or "",
         "author_name": author.get("nickname") or author.get("name") or "",
-        "author_avatar": author.get("avatar") or author.get("avatar_url") or "",
-        "cover_url": _first_url(card.get("cover") or card.get("image_list") or card.get("images")),
-        "image_urls": _all_urls(card.get("image_list") or card.get("images") or card.get("cover")),
+        "author_avatar": _proxy_image_url(author.get("avatar") or author.get("avatar_url") or ""),
+        "cover_url": _proxy_image_url(_first_url(card.get("cover") or card.get("image_list") or card.get("images"))),
+        "image_urls": _proxy_image_urls(_all_urls(card.get("image_list") or card.get("images") or card.get("cover"))),
         "likes": _metric(interact.get("liked_count") or interact.get("likes")),
         "collects": _metric(interact.get("collected_count") or interact.get("collects")),
         "comments": _metric(interact.get("comment_count") or interact.get("comments")),
@@ -269,9 +286,9 @@ def _normalize_detail_payload(raw_payload: dict[str, Any], source_url: str = "")
     images = _all_urls(card.get("image_list") or card.get("images") or card.get("cover"))
     if source_url:
         normalized["note_url"] = source_url
-    normalized["image_urls"] = images
+    normalized["image_urls"] = _proxy_image_urls(images)
     video_url = _video_url(card)
-    normalized["video_url"] = video_url
+    normalized["video_url"] = _proxy_image_url(video_url)
     normalized["video_addr"] = video_url
     normalized["tags"] = _tag_names(card.get("tag_list") or card.get("tags") or card.get("topics"))
     normalized["raw"] = raw_payload

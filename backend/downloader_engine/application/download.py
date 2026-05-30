@@ -250,7 +250,7 @@ class Download:
                 )
                 # self.__create_progress(bar, None)
                 logging(self.print, _("文件 {0} 下载成功").format(real.name))
-                return True
+                return {"ok": True, "file": str(real), "source": url}
             except HTTPError as error:
                 # self.__create_progress(bar, None)
                 logging(
@@ -260,7 +260,7 @@ class Download:
                     ),
                     ERROR,
                 )
-                return False
+                return {"ok": False, "file": str(temp), "source": url, "error": repr(error)}
             except CacheError as error:
                 self.manager.delete(temp)
                 logging(
@@ -268,7 +268,7 @@ class Download:
                     str(error),
                     ERROR,
                 )
-                return False
+                return {"ok": False, "file": str(temp), "source": url, "error": str(error)}
 
     @staticmethod
     def __create_progress(

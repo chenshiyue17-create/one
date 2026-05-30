@@ -37,12 +37,19 @@ class XhsCreatorLoginAdapter:
 
             api = XHSCreatorLoginApi()
             success, message, updated_cookies = api.check_qrcode_status(qr_id, cookies)
+        normalized_message = message or ""
         status = "confirmed" if success else "pending"
-        if "过期" in message or "expired" in message.lower():
+        if "过期" in normalized_message or "expired" in normalized_message.lower():
             status = "expired"
-        if "确认" in message or "confirm" in message.lower():
+        if (
+            "确认" in normalized_message
+            or "已扫码" in normalized_message
+            or "扫码成功" in normalized_message
+            or "confirm" in normalized_message.lower()
+            or "scanned" in normalized_message.lower()
+        ):
             status = "scanned"
-        return {"status": status, "cookies": updated_cookies}
+        return {"status": status, "cookies": updated_cookies, "message": normalized_message}
 
     def get_user_info(self, cookies: dict[str, Any]) -> dict[str, Any]:
         with direct_xhs_request_env():

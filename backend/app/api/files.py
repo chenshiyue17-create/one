@@ -203,3 +203,33 @@ async def upload_file(file: UploadFile, current_user: User = Depends(get_current
         "asset_type": asset_type,
         "size": len(content),
     }
+
+
+@router.get("/proxy/image")
+async def proxy_image(url: str):
+    """Proxy xiaohongshu CDN images with proper headers to avoid hotlinking blocks."""
+    import httpx
+    from fastapi.responses import Response
+
+    if not url.startswith(("https://sns-img-", "https://ci.xiaohongshu.com", "https://sns-video-")):
+        raise HTTPException(status_code=400, detail="Only xiaohongshu CDN URLs are supported")
+
+    async with httpx.AsyncClient(verify=False, follow_redirects=True, timeout=30) as client:
+        resp = await client.get(
+            url,
+            headers={
+                "Referer": "https://www.xiaohongshu.com/",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            },
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail="Failed to fetch image")
+        return Response(
+            content=resp.content,
+            media_type=resp.headers.get("content-type", "image/webp"),
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )

@@ -24,6 +24,7 @@ python-jose[cryptography]
 Pillow>=9.2
 pyyaml
 browser-cookie3
+playwright
 pyperclip
 fastmcp
 emoji
